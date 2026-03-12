@@ -9,6 +9,7 @@ export interface Document {
   keywords: string[];
   fileUrl: string;
   createdAt: string;
+  aiSummary: string;
 }
 
 export interface TimelineEvent {
