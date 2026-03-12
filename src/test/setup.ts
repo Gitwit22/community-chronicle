@@ -13,3 +13,11 @@ Object.defineProperty(window, "matchMedia", {
     dispatchEvent: () => {},
   }),
 });
+
+// Mock URL.createObjectURL for file handling in tests
+if (typeof URL.createObjectURL === "undefined") {
+  URL.createObjectURL = () => "blob:mock-url";
+}
+if (typeof URL.revokeObjectURL === "undefined") {
+  URL.revokeObjectURL = () => {};
+}
