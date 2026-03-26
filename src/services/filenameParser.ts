@@ -62,11 +62,11 @@ const FINANCIAL_TYPE_KEYWORDS: Array<{
   { type: "Receipt", keywords: ["receipt", "rcpt"] },
   { type: "Budget", keywords: ["budget", "budgetary"] },
   { type: "Expense Report", keywords: ["expense_report", "expense-report", "expensereport", "expense report"] },
-  { type: "Bank Statement", keywords: ["bank_statement", "bank-statement", "bankstatement", "bank statement", "statement"] },
+  { type: "Bank Statement", keywords: ["bank_statement", "bank-statement", "bankstatement", "bank statement"] },
   { type: "Payroll", keywords: ["payroll", "salary", "wages"] },
   { type: "Tax Document", keywords: ["tax", "tax_document", "tax-document", "1099", "w2", "w-2"] },
   { type: "Reimbursement", keywords: ["reimbursement", "reimburse"] },
-  { type: "Purchase Order", keywords: ["purchase_order", "purchase-order", "purchaseorder", "purchase order", "po"] },
+  { type: "Purchase Order", keywords: ["purchase_order", "purchase-order", "purchaseorder", "purchase order"] },
   { type: "Financial Summary", keywords: ["financial_summary", "financial-summary", "financialsummary", "financial summary", "summary"] },
   { type: "Audit", keywords: ["audit", "auditing"] },
 ];
@@ -76,11 +76,14 @@ const FINANCIAL_TYPE_KEYWORDS: Array<{
  * Looks for 4-digit years in the 2000-2099 range.
  */
 export function extractYear(text: string): number | undefined {
-  // Match 20xx patterns, preferring those that are standalone (not part of longer numbers)
-  const matches = text.match(/\b(20\d{2})\b/g);
+  // Match 20xx patterns, handling word boundaries and common separators
+  const matches = text.match(/(?:^|[\s_\-/\\.,;:()])?(20\d{2})(?:[\s_\-/\\.,;:()]|$)/g);
   if (matches && matches.length > 0) {
-    const year = parseInt(matches[0], 10);
-    if (year >= 2000 && year <= 2099) return year;
+    const yearMatch = matches[0].match(/20\d{2}/);
+    if (yearMatch) {
+      const year = parseInt(yearMatch[0], 10);
+      if (year >= 2000 && year <= 2099) return year;
+    }
   }
   return undefined;
 }
@@ -310,23 +313,17 @@ export function extractFileMetadata(
   folderPath?: string,
   content?: string
 ): FilenameParsedMetadata {
-  let result: FilenameParsedMetadata = {
-    tags: [],
-    confidence: 0,
-    source: "filename",
-  };
+  // Priority 2: Filename (always parsed)
+  const filenameResult = parseFilename(filename);
 
-  // Priority 1: Folder path
+  // Priority 1: Folder path (overrides filename when available)
+  let result = filenameResult;
   if (folderPath) {
     const pathResult = parseFolderPath(folderPath);
-    result = mergeParsedMetadata(pathResult, result);
+    result = mergeParsedMetadata(pathResult, filenameResult);
   }
 
-  // Priority 2: Filename
-  const filenameResult = parseFilename(filename);
-  result = mergeParsedMetadata(result.confidence > 0 ? result : filenameResult, result.confidence > 0 ? filenameResult : result);
-
-  // Priority 3: Content fallback (only if filename was unclear)
+  // Priority 3: Content fallback (only if filename/path was unclear)
   if (result.confidence < 0.5 && content) {
     const contentResult = parseContent(content);
     result = mergeParsedMetadata(result, contentResult);
