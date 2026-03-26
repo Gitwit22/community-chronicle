@@ -36,7 +36,9 @@ const DocumentDetail = ({ document, open, onOpenChange }: DocumentDetailProps) =
               <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <Calendar className="h-3.5 w-3.5" />
-                  {document.year}
+                  {document.month
+                    ? `${["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][document.month]} ${document.year}`
+                    : document.year}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <User className="h-3.5 w-3.5" />
@@ -62,6 +64,27 @@ const DocumentDetail = ({ document, open, onOpenChange }: DocumentDetailProps) =
               {document.description}
             </p>
           </div>
+
+          {/* Financial Classification */}
+          {(document.financialCategory || document.financialDocumentType) && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <h4 className="font-display text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2 uppercase tracking-wider">
+                Financial Classification
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {document.financialCategory && (
+                  <Badge variant="secondary" className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                    {document.financialCategory}
+                  </Badge>
+                )}
+                {document.financialDocumentType && (
+                  <Badge variant="outline" className="border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400">
+                    {document.financialDocumentType}
+                  </Badge>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* AI Summary */}
           {document.aiSummary && (
