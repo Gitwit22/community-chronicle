@@ -13,6 +13,7 @@ import type { ArchiveDocument } from "@/types/document";
 
 interface ReviewQueuePanelProps {
   documents: ArchiveDocument[];
+  isLoading?: boolean;
   onSelectDocument?: (doc: ArchiveDocument) => void;
   onResolve?: (docId: string, resolution: string) => void;
 }
@@ -23,7 +24,19 @@ const priorityColors: Record<string, string> = {
   low: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
 };
 
-const ReviewQueuePanel = ({ documents, onSelectDocument, onResolve }: ReviewQueuePanelProps) => {
+const ReviewQueuePanel = ({ documents, isLoading = false, onSelectDocument, onResolve }: ReviewQueuePanelProps) => {
+  if (isLoading) {
+    return (
+      <div className="text-center py-12">
+        <RefreshCw className="h-10 w-10 text-primary mx-auto mb-4 animate-spin" />
+        <h3 className="font-display text-lg text-foreground mb-1">Loading Review Queue</h3>
+        <p className="text-sm text-muted-foreground font-body">
+          Checking for documents that require manual review.
+        </p>
+      </div>
+    );
+  }
+
   const reviewDocs = documents.filter(
     (doc) => doc.review?.required && !doc.review?.resolution
   );

@@ -8,26 +8,18 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ArchiveDocument, DocumentFilters, DocumentIntakeInput, ReviewMetadata } from "@/types/document";
 import {
-  getAllDocuments,
-  getDocumentById,
-  updateDocument,
-  deleteDocument,
-  getDocumentYears,
-  getAllTags,
-  getUsedCategories,
-  getStatusCounts,
-  searchDocuments,
-} from "@/services/documentStore";
-import {
-  intakeSingleFile,
-  intakeMultipleFiles,
-  intakeDragDrop,
-  intakeBulkFolder,
-  intakeScannerImport,
-  intakeManualEntry,
-} from "@/services/intakeService";
-import { retryProcessing } from "@/services/processingPipeline";
-import { getReviewQueue, resolveReview, markForReview } from "@/services/reviewQueueService";
+  apiCreateManualEntry,
+  apiDeleteDocument,
+  apiGetAllDocuments,
+  apiGetDocumentById,
+  apiGetReviewQueue,
+  apiMarkForReview,
+  apiResolveReview,
+  apiRetryProcessing,
+  apiUpdateDocument,
+  apiUploadMultipleFiles,
+  apiUploadSingleFile,
+} from "@/services/apiDocuments";
 import { detectDuplicates } from "@/services/duplicateDetectionService";
 
 const QUERY_KEYS = {
@@ -45,7 +37,7 @@ const QUERY_KEYS = {
 export function useDocuments() {
   return useQuery({
     queryKey: QUERY_KEYS.documents,
-    queryFn: getAllDocuments,
+    queryFn: () => apiGetAllDocuments(),
     staleTime: 1000,
   });
 }
@@ -54,7 +46,7 @@ export function useDocuments() {
 export function useDocument(id: string | undefined) {
   return useQuery({
     queryKey: QUERY_KEYS.document(id || ""),
-    queryFn: () => (id ? getDocumentById(id) : undefined),
+    queryFn: () => (id ? apiGetDocumentById(id) : undefined),
     enabled: !!id,
   });
 }
@@ -63,7 +55,7 @@ export function useDocument(id: string | undefined) {
 export function useDocumentSearch(filters: DocumentFilters) {
   return useQuery({
     queryKey: QUERY_KEYS.search(filters),
-    queryFn: () => searchDocuments(filters),
+    queryFn: () => apiGetAllDocuments(filters),
     staleTime: 500,
   });
 }
@@ -72,7 +64,10 @@ export function useDocumentSearch(filters: DocumentFilters) {
 export function useDocumentYears() {
   return useQuery({
     queryKey: QUERY_KEYS.years,
-    queryFn: getDocumentYears,
+    queryFn: async () => {
+      const docs = await apiGetAllDocuments();
+      return [...new Set(docs.map((d) => d.year))].sort((a, b) => b - a);
+    },
   });
 }
 
@@ -80,7 +75,12 @@ export function useDocumentYears() {
 export function useDocumentTags() {
   return useQuery({
     queryKey: QUERY_KEYS.tags,
-    queryFn: getAllTags,
+    queryFn: async () => {
+      const docs = await apiGetAllDocuments();
+      const tagSet = new Set<string>();
+      docs.forEach((doc) => doc.tags.forEach((tag) => tagSet.add(tag)));
+      return [...tagSet].sort();
+    },
   });
 }
 
@@ -88,7 +88,10 @@ export function useDocumentTags() {
 export function useDocumentCategories() {
   return useQuery({
     queryKey: QUERY_KEYS.categories,
-    queryFn: getUsedCategories,
+    queryFn: async () => {
+      const docs = await apiGetAllDocuments();
+      return [...new Set(docs.map((d) => d.category))].sort();
+    },
   });
 }
 
@@ -96,7 +99,14 @@ export function useDocumentCategories() {
 export function useStatusCounts() {
   return useQuery({
     queryKey: QUERY_KEYS.statusCounts,
-    queryFn: getStatusCounts,
+    queryFn: async () => {
+      const docs = await apiGetAllDocuments();
+      const counts: Record<string, number> = {};
+      docs.forEach((doc) => {
+        counts[doc.processingStatus] = (counts[doc.processingStatus] || 0) + 1;
+      });
+      return counts;
+    },
   });
 }
 
@@ -104,7 +114,7 @@ export function useStatusCounts() {
 export function useReviewQueue() {
   return useQuery({
     queryKey: QUERY_KEYS.reviewQueue,
-    queryFn: getReviewQueue,
+    queryFn: apiGetReviewQueue,
     staleTime: 1000,
   });
 }
@@ -114,7 +124,7 @@ export function useUploadFile() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ file, metadata }: { file: File; metadata?: Partial<DocumentIntakeInput> }) =>
-      intakeSingleFile(file, metadata),
+      apiUploadSingleFile(file, metadata),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -126,7 +136,7 @@ export function useUploadMultipleFiles() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ files, metadata }: { files: File[]; metadata?: Partial<DocumentIntakeInput> }) =>
-      intakeMultipleFiles(files, metadata),
+      apiUploadMultipleFiles(files, metadata),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -138,7 +148,7 @@ export function useDragDropUpload() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ files, metadata }: { files: File[]; metadata?: Partial<DocumentIntakeInput> }) =>
-      intakeDragDrop(files, metadata),
+      apiUploadMultipleFiles(files, { ...metadata, intakeSource: "drag_drop" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -150,7 +160,7 @@ export function useBulkUpload() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ files, metadata }: { files: File[]; metadata?: Partial<DocumentIntakeInput> }) =>
-      intakeBulkFolder(files, metadata),
+      apiUploadMultipleFiles(files, { ...metadata, intakeSource: "bulk_folder" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -162,7 +172,7 @@ export function useScannerImport() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ files, metadata }: { files: File[]; metadata?: Partial<DocumentIntakeInput> }) =>
-      intakeScannerImport(files, metadata),
+      apiUploadMultipleFiles(files, { ...metadata, intakeSource: "scanner_import" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -174,7 +184,7 @@ export function useManualEntry() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: Omit<DocumentIntakeInput, "intakeSource">) =>
-      intakeManualEntry(input),
+      apiCreateManualEntry(input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -186,7 +196,7 @@ export function useUpdateDocument() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Partial<ArchiveDocument> }) =>
-      updateDocument(id, updates),
+      apiUpdateDocument(id, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -197,7 +207,7 @@ export function useUpdateDocument() {
 export function useDeleteDocument() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => deleteDocument(id),
+    mutationFn: async (id: string) => apiDeleteDocument(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -208,7 +218,7 @@ export function useDeleteDocument() {
 export function useRetryProcessing() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => retryProcessing(id),
+    mutationFn: (id: string) => apiRetryProcessing(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -227,7 +237,7 @@ export function useResolveReview() {
       docId: string;
       resolution: ReviewMetadata["resolution"];
       notes?: string;
-    }) => resolveReview(docId, resolution, notes),
+    }) => apiResolveReview(docId, resolution, notes),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -240,6 +250,25 @@ export function useDetectDuplicates() {
   return useMutation({
     mutationFn: ({ docId, file }: { docId: string; file?: File }) =>
       detectDuplicates(docId, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+    },
+  });
+}
+
+/** Hook: Mark document for human review */
+export function useMarkForReview() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      docId,
+      reasons,
+      priority,
+    }: {
+      docId: string;
+      reasons: string[];
+      priority?: ReviewMetadata["priority"];
+    }) => apiMarkForReview(docId, reasons, priority),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },

@@ -1,10 +1,8 @@
 /**
- * PDF Extractor Adapter (Scaffold)
+ * PDF Extractor Adapter
  *
- * SCAFFOLD: In production, integrate a PDF parsing library such as:
- * - pdf.js (Mozilla) for client-side extraction
- * - pdf-parse for server-side extraction
- * - A cloud API (AWS Textract, Google Document AI) for high-quality extraction
+ * Uses pdf.js to extract page text from PDF files in the browser.
+ * Falls back with a warning if parsing fails.
  */
 
 import type { TextExtractorAdapter, ExtractedContent } from "@/types/document";
@@ -15,22 +13,51 @@ export const pdfExtractor: TextExtractorAdapter = {
   },
 
   async extract(file: File): Promise<ExtractedContent> {
-    // TODO: Integrate pdf.js or server-side PDF extraction
-    // Example integration point:
-    // const pdfJs = await import('pdfjs-dist');
-    // const pdf = await pdfJs.getDocument(await file.arrayBuffer()).promise;
-    // let text = '';
-    // for (let i = 1; i <= pdf.numPages; i++) {
-    //   const page = await pdf.getPage(i);
-    //   const content = await page.getTextContent();
-    //   text += content.items.map(item => item.str).join(' ') + '\n';
-    // }
-    // return { text, pages: pdf.numPages, confidence: 0.85 };
+    try {
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const uint8 = new Uint8Array(await file.arrayBuffer());
+      const loadingTask = pdfjs.getDocument({
+        data: uint8,
+        useWorkerFetch: false,
+        isEvalSupported: false,
+      });
+      const pdf = await loadingTask.promise;
 
-    return {
-      text: `[PDF document: ${file.name} (${(file.size / 1024).toFixed(1)} KB) — text extraction pending. Install pdf.js for client-side extraction.]`,
-      confidence: 0,
-      warnings: ["PDF text extraction not yet enabled. Install pdf.js for client-side extraction."],
-    };
+      const pageText: string[] = [];
+
+      for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+        const page = await pdf.getPage(pageNo);
+        const content = await page.getTextContent();
+        const textItems = content.items
+          .map((item) => {
+            if ("str" in item) {
+              return item.str;
+            }
+            return "";
+          })
+          .filter(Boolean);
+
+        pageText.push(textItems.join(" "));
+      }
+
+      const text = pageText.join("\n\n").trim();
+
+      return {
+        text,
+        pages: pdf.numPages,
+        confidence: text.length > 0 ? 0.88 : 0.45,
+        warnings: text.length > 0 ? undefined : ["PDF parsed but no extractable text was found. Document may be scanned."],
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown PDF parse error";
+      return {
+        text: `[PDF extraction failed for ${file.name}. The file may be scanned/image-only or malformed.]`,
+        confidence: 0.2,
+        warnings: [
+          `Unable to parse PDF: ${message}`,
+          "If this is a scanned PDF, route it through OCR extraction.",
+        ],
+      };
+    }
   },
 };

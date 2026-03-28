@@ -161,6 +161,7 @@ const Index = () => {
           <TabsContent value="dashboard" className="space-y-6">
             <ArchiveDashboard
               documents={allDocuments}
+              isLoading={isLoading}
               onFilterByStatus={handleDashboardFilter}
             />
           </TabsContent>
@@ -219,6 +220,7 @@ const Index = () => {
           <TabsContent value="review" className="space-y-6">
             <ReviewQueuePanel
               documents={allDocuments}
+              isLoading={isLoading}
               onSelectDocument={setSelectedDoc}
               onResolve={handleReviewResolve}
             />
@@ -232,7 +234,7 @@ const Index = () => {
               <p className="text-muted-foreground font-body mb-8">
                 Key milestones in the organization's history of community advocacy and research.
               </p>
-              <Timeline />
+              <Timeline isLoading={isLoading} />
             </div>
           </TabsContent>
         </Tabs>

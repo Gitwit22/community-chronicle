@@ -48,20 +48,21 @@ describe("textExtractor", () => {
       expect(plainTextExtractor.canHandle(file)).toBe(true);
     });
 
-    it("returns scaffold for PDF files", async () => {
+    it("attempts extraction for PDF files and returns structured output", async () => {
       const file = new File(["fake pdf"], "document.pdf", { type: "application/pdf" });
       const result = await extractContentFromFile(file);
-      expect(result.confidence).toBe(0);
-      expect(result.warnings).toBeDefined();
-      expect(result.warnings!.length).toBeGreaterThan(0);
+      expect(typeof result.text).toBe("string");
+      expect(result.confidence).toBeDefined();
+      // For invalid fixture bytes, parser should fail gracefully with warnings.
+      expect(result.warnings?.length ?? 0).toBeGreaterThan(0);
     });
 
-    it("returns empty text with warning for image files (OCR scaffold)", async () => {
+    it("attempts OCR for image files and fails gracefully on invalid bytes", async () => {
       const file = new File(["fake image"], "photo.png", { type: "image/png" });
       const result = await extractContentFromFile(file);
-      expect(result.text).toBe("");
-      expect(result.confidence).toBe(0);
-      expect(result.warnings).toContain("OCR not yet enabled for this file type");
+      expect(typeof result.text).toBe("string");
+      expect(result.confidence).toBeDefined();
+      expect(result.warnings?.length ?? 0).toBeGreaterThan(0);
     });
 
     it("uses fallback for unknown file types", async () => {
@@ -81,6 +82,40 @@ describe("textExtractor", () => {
       const file = new File(["fake"], "doc.pdf", { type: "application/pdf" });
       const { pdfExtractor } = await import("@/services/extractorAdapters/pdfExtractor");
       expect(pdfExtractor.canHandle(file)).toBe(true);
+    });
+
+    it("selects correct adapter for DOCX files", async () => {
+      const file = new File(["fake"], "notes.docx", {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+      const { officeExtractor } = await import("@/services/extractorAdapters/officeExtractor");
+      expect(officeExtractor.canHandle(file)).toBe(true);
+    });
+
+    it("extracts text from XLSX spreadsheets", async () => {
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.utils.book_new();
+      const sheet = XLSX.utils.aoa_to_sheet([
+        ["Name", "Value"],
+        ["Budget", "5000"],
+      ]);
+      XLSX.utils.book_append_sheet(workbook, sheet, "Summary");
+      const rawBytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      const bytes = rawBytes instanceof ArrayBuffer
+        ? new Uint8Array(rawBytes)
+        : new Uint8Array(rawBytes as ArrayLike<number>);
+
+      // Use a minimal File-like object to ensure deterministic binary read behavior in tests.
+      const file = {
+        name: "budget.xlsx",
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+      } as unknown as File;
+
+      const result = await extractContentFromFile(file);
+      expect(result.text).toContain("Summary");
+      expect(result.text).toContain("Budget");
+      expect((result.confidence ?? 0)).toBeGreaterThan(0.8);
     });
   });
 

@@ -1,6 +1,19 @@
 import { timelineEvents } from "@/data/documents";
 
-const Timeline = () => {
+interface TimelineProps {
+  isLoading?: boolean;
+}
+
+const Timeline = ({ isLoading = false }: TimelineProps) => {
+  if (isLoading) {
+    return (
+      <div className="text-center py-12">
+        <div className="h-10 w-10 mx-auto mb-4 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+        <p className="text-muted-foreground font-body">Loading timeline events...</p>
+      </div>
+    );
+  }
+
   if (timelineEvents.length === 0) {
     return (
       <div className="text-center py-12">

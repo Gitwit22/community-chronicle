@@ -1,73 +1,102 @@
-# Welcome to your Lovable project
+# Community Chronicle
 
-## Project info
+Community Chronicle is a document archive prototype for civil rights and equity-focused organizations. It supports searchable document intake, basic workflow tracking, review queue management, and dashboard-level operational visibility.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## What the app does
 
-## How can I edit this code?
+- Ingests documents through upload and manual entry flows.
+- Persists records in Postgres through an Express API.
+- Stores uploaded files durably on disk for MVP (`uploads/`).
+- Supports faceted search, keyword relevance ranking, and timeline browsing.
+- Tracks processing state, review-required flags, and operational metrics for the archive.
+- Provides an administrative dashboard and review queue for triage workflows.
 
-There are several ways of editing your application.
+## Current architecture
 
-**Use Lovable**
+The app now runs as a frontend + backend split:
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- Frontend (`Vite + React + TypeScript`)
+  - `src/pages`: route-level screens (`Index`, `NotFound`).
+  - `src/components`: UI composition for archive workflows.
+  - `src/hooks/useDocuments.ts`: React Query hooks now call backend API endpoints.
+  - `src/services/apiDocuments.ts`: frontend API client for document/review/upload operations.
 
-Changes made via Lovable will be committed automatically to this repo.
+- Backend (`Node + Express + Prisma + Postgres`)
+  - `server/src/app.ts`: REST API routes for documents, uploads, retries, and review actions.
+  - `server/src/processingQueue.ts`: DB-backed queue worker for server-side processing state.
+  - `server/src/seed.ts`: legacy seed import on empty database.
+  - `prisma/schema.prisma`: Postgres schema for `Document` and `ProcessingJob`.
 
-**Use your preferred IDE**
+- Shared/project assets
+  - `uploads/`: durable file storage path for MVP.
+  - `src/data`: seeded legacy documents used by backend seeding and legacy tests.
+  - `src/test`: unit tests for service behavior.
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## What is real vs stubbed
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### Real today
 
-Follow these steps:
+- Document CRUD, filtering, and search from backend API endpoints.
+- Review queue fetch/resolve/mark flows backed by Postgres state.
+- Durable file storage to disk (`uploads/`) for uploaded source files.
+- Server-side processing state transitions (`queued` -> `processing` -> `processed`/`failed`) via a DB-backed queue.
+- Legacy seed migration into the database on first boot.
+- Real extraction adapters for PDF (pdf.js), image OCR (Tesseract.js), and Office spreadsheets/documents (.xlsx/.xls/.docx) in the extraction module.
+- Unit test coverage for core frontend service behavior.
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### Stubbed or simulated
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+- AI categorization/extraction remains heuristic and local, not backed by an external model.
+- Server worker extraction for PDF/image is currently conservative and should be upgraded to dedicated OCR workers/cloud OCR for production quality.
+- Authentication, authorization, and multi-user role enforcement are not implemented.
+- File storage is local disk for MVP (not yet NAS or cloud object storage).
 
-# Step 3: Install the necessary dependencies.
-npm i
+## Local setup
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+### Prerequisites
+
+- Node.js 20+
+- npm 9+
+- Postgres 14+
+
+### Install and run
+
+```bash
+npm install
+cp .env.example .env
+npm run db:generate
+npm run db:push
+npm run dev:full
 ```
 
-**Edit a file directly in GitHub**
+Open the app at `http://localhost:8080`.
+The API listens at `http://localhost:4000`.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Test commands
 
-**Use GitHub Codespaces**
+```bash
+# Run all unit tests once
+npm run test
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+# Run tests in watch mode
+npm run test:watch
 
-## What technologies are used for this project?
+# Lint the project
+npm run lint
 
-This project is built with:
+# Build production bundle
+npm run build
+```
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## Roadmap
 
-## How can I deploy this project?
+- Upgrade server extraction workers for high-accuracy OCR/PDF parsing (cloud OCR fallback + retries).
+- Add user auth, role-based review permissions, and audit ownership.
+- Replace local disk file storage with NAS or cloud object storage.
+- Expand test suite with API integration, component tests, and end-to-end coverage.
+- Add import/export tooling for archival migration workflows.
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+## Notes for contributors
 
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- Seeded data in `src/data/documents.ts` is intentionally stable to support deterministic tests.
+- Service-layer changes should include updates to related tests in `src/test`.

@@ -28,6 +28,7 @@ import {
 
 interface ArchiveDashboardProps {
   documents: ArchiveDocument[];
+  isLoading?: boolean;
   onFilterByStatus?: (status: string) => void;
 }
 
@@ -50,11 +51,35 @@ const INTAKE_SOURCE_LABELS: Record<string, string> = {
   legacy_import: "Legacy Import",
 };
 
-const ArchiveDashboard = ({ documents, onFilterByStatus }: ArchiveDashboardProps) => {
+const ArchiveDashboard = ({ documents, isLoading = false, onFilterByStatus }: ArchiveDashboardProps) => {
   const stats = getArchiveStats(documents);
   const sources = getSourceBreakdown(documents);
   const health = getProcessingHealth(documents);
   const recentActivity = getRecentActivity(documents, 10);
+
+  if (isLoading) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-8 text-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-3" />
+        <h3 className="font-display text-lg font-semibold text-foreground mb-1">Loading Dashboard</h3>
+        <p className="text-sm text-muted-foreground font-body">
+          Gathering archive statistics and recent processing activity.
+        </p>
+      </div>
+    );
+  }
+
+  if (documents.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-card/60 p-8 text-center">
+        <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+        <h3 className="font-display text-lg font-semibold text-foreground mb-1">No Documents Yet</h3>
+        <p className="text-sm text-muted-foreground font-body max-w-xl mx-auto">
+          Upload files or create a manual entry to populate the archive. Dashboard metrics and activity will appear once documents are added.
+        </p>
+      </div>
+    );
+  }
 
   const kpiCards = [
     { label: "Total Documents", value: stats.total, icon: FileText, color: "text-primary", filterStatus: "" },

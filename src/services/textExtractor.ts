@@ -16,6 +16,7 @@ import type { ExtractedContent, TextExtractorAdapter } from "@/types/document";
 import { plainTextExtractor } from "./extractorAdapters/plainTextExtractor";
 import { pdfExtractor } from "./extractorAdapters/pdfExtractor";
 import { imageOcrExtractor } from "./extractorAdapters/imageOcrExtractor";
+import { officeExtractor } from "./extractorAdapters/officeExtractor";
 import { fallbackExtractor } from "./extractorAdapters/fallbackExtractor";
 
 /** Ordered list of extractor adapters. First match wins. */
@@ -23,6 +24,7 @@ const extractorAdapters: TextExtractorAdapter[] = [
   plainTextExtractor,
   pdfExtractor,
   imageOcrExtractor,
+  officeExtractor,
   fallbackExtractor,
 ];
 

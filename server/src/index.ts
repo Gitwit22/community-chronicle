@@ -1,0 +1,31 @@
+import { app } from "./app.js";
+import { prisma } from "./db.js";
+import { PORT } from "./config.js";
+import { seedLegacyData } from "./seed.js";
+import { startProcessingWorker, stopProcessingWorker } from "./processingQueue.js";
+
+async function bootstrap() {
+  await prisma.$connect();
+  await seedLegacyData();
+
+  startProcessingWorker();
+
+  app.listen(PORT, () => {
+    // eslint-disable-next-line no-console
+    console.log(`Community Chronicle API running on http://localhost:${PORT}`);
+  });
+}
+
+void bootstrap();
+
+process.on("SIGINT", async () => {
+  stopProcessingWorker();
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
+process.on("SIGTERM", async () => {
+  stopProcessingWorker();
+  await prisma.$disconnect();
+  process.exit(0);
+});
