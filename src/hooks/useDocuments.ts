@@ -173,7 +173,7 @@ export function useScannerImport() {
 export function useManualEntry() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: Omit<DocumentIntakeInput, "intakeSource">) =>
+    mutationFn: async (input: Omit<DocumentIntakeInput, "intakeSource">) =>
       intakeManualEntry(input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
@@ -185,7 +185,7 @@ export function useManualEntry() {
 export function useUpdateDocument() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, updates }: { id: string; updates: Partial<ArchiveDocument> }) =>
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<ArchiveDocument> }) =>
       updateDocument(id, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
@@ -197,7 +197,7 @@ export function useUpdateDocument() {
 export function useDeleteDocument() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => deleteDocument(id),
+    mutationFn: async (id: string) => deleteDocument(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
