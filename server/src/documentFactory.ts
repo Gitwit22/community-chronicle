@@ -118,7 +118,7 @@ export function createDocumentPayload(input: CreateDocumentInput) {
       : input.extractedText
       ? { required: false }
       : { required: true, reason: ["Missing extracted text"], priority: "medium" },
-    needsReview: input.fileMeta ? ocrStatus === "pending" : !Boolean(input.extractedText),
+    needsReview: input.fileMeta ? ocrStatus === "pending" : !input.extractedText,
     aiSummary: "",
   };
 }

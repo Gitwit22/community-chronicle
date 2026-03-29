@@ -1,129 +1,213 @@
 import fs from "fs/promises";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
+import { logger } from "./logger.js";
+import {
+  MAX_ATTEMPTS,
+  JOB_TIMEOUT_MS,
+  RETRY_BACKOFF_BASE_MS,
+  SCANNED_PDF_WORDS_PER_PAGE_THRESHOLD,
+  OCR_CONFIDENCE_REVIEW_THRESHOLD,
+  MAX_FILE_SIZE_BYTES,
+} from "./config.js";
 
-let running = false;
-let timer: NodeJS.Timeout | null = null;
+let workerRunning = false;
+let workerTimer: NodeJS.Timeout | null = null;
 
-function appendHistory(existing: unknown, event: Record<string, unknown>) {
-  const history = Array.isArray(existing) ? [...existing] : [];
-  history.push(event);
-  return history;
+// ---------------------------------------------------------------------------
+// Extraction result shape
+// ---------------------------------------------------------------------------
+
+interface ExtractionResult {
+  text: string;
+  confidence: number;
+  method: "text" | "pdf" | "pdf_scanned" | "ocr" | "unsupported";
+  pageCount?: number;
+  warnings?: string[];
 }
 
-async function extractText(filePath: string | null, mimeType: string | null): Promise<{ text: string; confidence: number; warnings?: string[] }> {
-  if (!filePath) {
-    return { text: "", confidence: 0.1, warnings: ["No file path available"] };
-  }
+// ---------------------------------------------------------------------------
+// Timeout wrapper
+// ---------------------------------------------------------------------------
 
-  if (mimeType?.startsWith("text/") || mimeType === "application/json" || mimeType === "text/csv") {
-    const text = await fs.readFile(filePath, "utf8");
-    return { text: text.slice(0, 200000), confidence: 0.98 };
-  }
-
-  if (mimeType === "application/pdf") {
-    return {
-      text: "",
-      confidence: 0.35,
-      warnings: ["PDF queued on server; OCR/extraction pipeline can be upgraded to cloud OCR for higher accuracy."],
-    };
-  }
-
-  if (mimeType?.startsWith("image/")) {
-    return {
-      text: "",
-      confidence: 0.2,
-      warnings: ["Image OCR queued on server; configure OCR worker for production accuracy."],
-    };
-  }
-
-  return { text: "", confidence: 0.1, warnings: ["No extractor for this MIME type"] };
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(
+      () => reject(new Error(`Processing timed out after ${timeoutMs}ms (${label})`)),
+      timeoutMs,
+    );
+    promise.then(
+      (v) => { clearTimeout(id); resolve(v); },
+      (e) => { clearTimeout(id); reject(e); },
+    );
+  });
 }
 
-async function processSingleJob(): Promise<void> {
-  const job = await prisma.processingJob.findFirst({
-    where: { status: "queued", scheduledAt: { lte: new Date() } },
-    orderBy: { createdAt: "asc" },
-    include: { document: true },
-  });
+// ---------------------------------------------------------------------------
+// Plain text extractor
+// ---------------------------------------------------------------------------
 
-  if (!job) return;
+async function extractPlainText(filePath: string): Promise<ExtractionResult> {
+  const text = await fs.readFile(filePath, "utf8");
+  return { text: text.slice(0, 200_000), confidence: 0.98, method: "text" };
+}
 
-  await prisma.processingJob.update({
-    where: { id: job.id },
-    data: { status: "processing", startedAt: new Date(), attempts: { increment: 1 } },
-  });
+// ---------------------------------------------------------------------------
+// PDF extractor (pdf-parse)
+// ---------------------------------------------------------------------------
 
-  const processingStartEvent = {
-    timestamp: new Date().toISOString(),
-    action: "processing_start",
-    status: "processing",
-    details: "Processing started on server worker",
+async function extractPdf(filePath: string): Promise<ExtractionResult> {
+  // Dynamic import keeps pdf-parse out of the module graph until needed.
+  const { default: pdfParse } = await import("pdf-parse" as string) as {
+    default: (buf: Buffer) => Promise<{ text: string; numpages: number }>;
   };
 
-  await prisma.document.update({
-    where: { id: job.documentId },
-    data: {
-      processingStatus: "processing",
-      status: "extracting",
-      statusUpdatedAt: new Date(),
-      processingHistory: appendHistory(job.document.processingHistory, processingStartEvent),
-      extraction: { status: "processing" },
-    },
-  });
+  const buffer = await fs.readFile(filePath);
+  const data = await pdfParse(buffer);
 
-  try {
-    const extraction = await extractText(job.document.filePath, job.document.mimeType);
-    const nowIso = new Date().toISOString();
-    const doneEvent = {
-      timestamp: nowIso,
-      action: "processing_complete",
-      status: "processed",
-      details: "Document processed by server queue worker",
+  const rawText = (data.text || "").trim();
+  const wordCount = rawText.split(/\s+/).filter(Boolean).length;
+  const pageCount = data.numpages || 1;
+  const wordsPerPage = wordCount / pageCount;
+
+  if (wordsPerPage < SCANNED_PDF_WORDS_PER_PAGE_THRESHOLD) {
+    return {
+      text: rawText,
+      confidence: 0.3,
+      method: "pdf_scanned",
+      pageCount,
+      warnings: [
+        `PDF appears to be scanned (${Math.round(wordsPerPage)} words/page < threshold ${SCANNED_PDF_WORDS_PER_PAGE_THRESHOLD}).`,
+        "Full scanned-PDF OCR requires system-level tools (e.g. poppler). Document flagged for manual review.",
+      ],
     };
+  }
 
-    const needsReview = extraction.confidence < 0.7;
+  return {
+    text: rawText.slice(0, 200_000),
+    confidence: 0.92,
+    method: "pdf",
+    pageCount,
+  };
+}
 
-    await prisma.document.update({
-      where: { id: job.documentId },
-      data: {
-        extractedText: extraction.text || `${job.document.title}\n\n${job.document.description}`,
-        processingStatus: "processed",
-        status: needsReview ? "review_required" : "archived",
-        statusUpdatedAt: new Date(),
-        needsReview,
-        review: needsReview
-          ? {
-              required: true,
-              reason: ["Low extraction confidence"],
-              priority: "high",
-            }
-          : { required: false },
-        extraction: {
-          status: "complete",
-          method: job.document.mimeType?.startsWith("image/")
-            ? "ocr"
-            : job.document.mimeType === "application/pdf"
-            ? "pdf"
-            : "text",
-          confidence: extraction.confidence,
-          extractedAt: nowIso,
-          warningMessages: extraction.warnings,
-        },
-        extractedMetadata: {
-          wordCount: extraction.text ? extraction.text.split(/\s+/).filter(Boolean).length : 0,
-          detectedTitle: job.document.title,
-          detectedAuthor: job.document.author,
-        },
-        processingHistory: appendHistory(job.document.processingHistory, doneEvent),
-      },
+// ---------------------------------------------------------------------------
+// Image OCR extractor (tesseract.js)
+// ---------------------------------------------------------------------------
+
+async function extractImage(filePath: string): Promise<ExtractionResult> {
+  const { createWorker } = await import("tesseract.js");
+  const worker = await createWorker("eng");
+  try {
+    const { data } = await worker.recognize(filePath);
+    const confidence = (data.confidence ?? 0) / 100;
+    return {
+      text: (data.text || "").slice(0, 200_000),
+      confidence,
+      method: "ocr",
+    };
+  } finally {
+    await worker.terminate();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher
+// ---------------------------------------------------------------------------
+
+async function runExtraction(
+  filePath: string | null,
+  mimeType: string | null,
+): Promise<ExtractionResult> {
+  if (!filePath) {
+    return { text: "", confidence: 0.1, method: "unsupported", warnings: ["No file path"] };
+  }
+
+  // File size guard
+  const stat = await fs.stat(filePath).catch(() => null);
+  if (stat && stat.size > MAX_FILE_SIZE_BYTES) {
+    return {
+      text: "",
+      confidence: 0.1,
+      method: "unsupported",
+      warnings: [
+        `File size ${stat.size} bytes exceeds processing limit of ${MAX_FILE_SIZE_BYTES} bytes. Manual review required.`,
+      ],
+    };
+  }
+
+  if (mimeType === "application/pdf") return extractPdf(filePath);
+  if (mimeType?.startsWith("image/")) return extractImage(filePath);
+  if (
+    mimeType?.startsWith("text/") ||
+    mimeType === "application/json" ||
+    mimeType === "text/csv"
+  ) {
+    return extractPlainText(filePath);
+  }
+
+  return {
+    text: "",
+    confidence: 0.1,
+    method: "unsupported",
+    warnings: [`No extractor available for MIME type '${mimeType}'.`],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// History helper
+// ---------------------------------------------------------------------------
+
+function appendHistory(existing: unknown, event: Record<string, unknown>): Prisma.InputJsonValue {
+  const history = Array.isArray(existing) ? [...existing] : [];
+  history.push(event);
+  return history as Prisma.InputJsonValue;
+}
+
+// ---------------------------------------------------------------------------
+// Failure handler — retry with backoff or dead-letter
+// ---------------------------------------------------------------------------
+
+async function handleJobFailure(
+  job: {
+    id: string;
+    documentId: string;
+    attempts: number;
+    maxAttempts: number;
+    errorLog: unknown;
+    document: { processingHistory: unknown; title: string; author: string };
+  },
+  error: Error,
+): Promise<void> {
+  const errorEntry = {
+    attempt: job.attempts,
+    timestamp: new Date().toISOString(),
+    error: error.message,
+  };
+  const errorLog = [
+    ...(Array.isArray(job.errorLog) ? job.errorLog : []),
+    errorEntry,
+  ];
+
+  const isDeadLetter = job.attempts >= job.maxAttempts;
+
+  if (isDeadLetter) {
+    logger.error("Job permanently failed — dead-lettered", {
+      jobId: job.id,
+      documentId: job.documentId,
+      attempts: job.attempts,
+      error: error.message,
     });
 
     await prisma.processingJob.update({
       where: { id: job.id },
-      data: { status: "completed", completedAt: new Date(), error: null },
+      data: {
+        status: "dead_letter",
+        error: error.message,
+        errorLog,
+        completedAt: new Date(),
+      } as never,
     });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown processing error";
 
     await prisma.document.update({
       where: { id: job.documentId },
@@ -134,59 +218,257 @@ async function processSingleJob(): Promise<void> {
         needsReview: true,
         review: {
           required: true,
-          reason: ["Processing failed"],
+          reason: ["Processing permanently failed after maximum retries"],
           priority: "high",
         },
         extraction: {
           status: "failed",
-          errorMessage,
+          errorMessage: error.message,
           extractedAt: new Date().toISOString(),
         },
         processingHistory: appendHistory(job.document.processingHistory, {
           timestamp: new Date().toISOString(),
-          action: "processing_failed",
+          action: "dead_letter",
           status: "failed",
-          details: errorMessage,
+          details: `Permanently failed after ${job.attempts} attempt(s): ${error.message}`,
+        }),
+      },
+    });
+  } else {
+    // Exponential backoff: attempt 1 → 5s, attempt 2 → 10s, attempt 3 → 20s
+    const backoffMs = RETRY_BACKOFF_BASE_MS * Math.pow(2, job.attempts - 1);
+    const nextRetryAt = new Date(Date.now() + backoffMs);
+
+    logger.warn("Job failed — scheduling retry", {
+      jobId: job.id,
+      documentId: job.documentId,
+      attempt: job.attempts,
+      maxAttempts: job.maxAttempts,
+      nextRetryAt: nextRetryAt.toISOString(),
+      error: error.message,
+    });
+
+    await prisma.processingJob.update({
+      where: { id: job.id },
+      data: {
+        status: "queued",
+        scheduledAt: nextRetryAt,
+        nextRetryAt,
+        error: error.message,
+        errorLog,
+      } as never,
+    });
+
+    await prisma.document.update({
+      where: { id: job.documentId },
+      data: {
+        processingStatus: "queued",
+        status: "queued",
+        statusUpdatedAt: new Date(),
+        processingHistory: appendHistory(job.document.processingHistory, {
+          timestamp: new Date().toISOString(),
+          action: "retry_scheduled",
+          status: "queued",
+          details: `Attempt ${job.attempts} failed. Retry ${job.attempts + 1} scheduled at ${nextRetryAt.toISOString()}.`,
+        }),
+      },
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Core job processor
+// ---------------------------------------------------------------------------
+
+async function processSingleJob(): Promise<void> {
+  const job = await prisma.processingJob.findFirst({
+    where: {
+      status: "queued",
+      scheduledAt: { lte: new Date() },
+    },
+    orderBy: { createdAt: "asc" },
+    include: { document: true },
+  });
+
+  if (!job) return;
+
+  // Mark as processing immediately to prevent duplicate pickup
+  await prisma.processingJob.update({
+    where: { id: job.id },
+    data: {
+      status: "processing",
+      startedAt: new Date(),
+      attempts: { increment: 1 },
+    },
+  });
+
+  // Re-fetch after increment so we have the current attempt count + errorLog
+  const updatedJob = await prisma.processingJob.findUniqueOrThrow({
+    where: { id: job.id },
+    include: { document: true },
+  });
+
+  await prisma.document.update({
+    where: { id: job.documentId },
+    data: {
+      processingStatus: "processing",
+      status: "extracting",
+      statusUpdatedAt: new Date(),
+      processingHistory: appendHistory(job.document.processingHistory, {
+        timestamp: new Date().toISOString(),
+        action: "processing_start",
+        status: "processing",
+        details: `Processing started (attempt ${updatedJob.attempts})`,
+      }),
+      extraction: { status: "processing" },
+    },
+  });
+
+  logger.info("Processing job started", {
+    jobId: job.id,
+    documentId: job.documentId,
+    attempt: updatedJob.attempts,
+    mimeType: job.document.mimeType,
+  });
+
+  try {
+    const extraction = await withTimeout(
+      runExtraction(job.document.filePath, job.document.mimeType),
+      JOB_TIMEOUT_MS,
+      job.document.mimeType ?? "unknown",
+    );
+
+    const nowIso = new Date().toISOString();
+    const needsReview = extraction.confidence < OCR_CONFIDENCE_REVIEW_THRESHOLD;
+    const docRecord = job.document as unknown as Record<string, unknown>;
+
+    await prisma.document.update({
+      where: { id: job.documentId },
+      data: {
+        extractedText:
+          extraction.text ||
+          `${job.document.title}\n\n${typeof docRecord.description === "string" ? docRecord.description : ""}`,
+        processingStatus: "processed",
+        status: needsReview ? "review_required" : "archived",
+        statusUpdatedAt: new Date(),
+        needsReview,
+        review: needsReview
+          ? {
+              required: true,
+              reason: [
+                extraction.method === "pdf_scanned"
+                  ? "Scanned PDF — manual OCR review required"
+                  : "Low extraction confidence",
+                ...(extraction.warnings ?? []),
+              ],
+              priority: "high",
+            }
+          : { required: false },
+        extraction: {
+          status: "complete",
+          method: extraction.method,
+          confidence: extraction.confidence,
+          extractedAt: nowIso,
+          pageCount: extraction.pageCount ?? null,
+          warningMessages: extraction.warnings ?? [],
+        },
+        extractedMetadata: {
+          wordCount: extraction.text
+            ? extraction.text.split(/\s+/).filter(Boolean).length
+            : 0,
+          detectedTitle: job.document.title,
+          detectedAuthor: job.document.author,
+        },
+        processingHistory: appendHistory(job.document.processingHistory, {
+          timestamp: nowIso,
+          action: "processing_complete",
+          status: "processed",
+          details: `Processed via '${extraction.method}' (confidence ${Math.round(extraction.confidence * 100)}%)`,
         }),
       },
     });
 
     await prisma.processingJob.update({
       where: { id: job.id },
-      data: { status: "failed", error: errorMessage, completedAt: new Date() },
+      data: { status: "completed", completedAt: new Date(), error: null },
     });
+
+    logger.info("Processing job completed", {
+      jobId: job.id,
+      documentId: job.documentId,
+      method: extraction.method,
+      confidence: extraction.confidence,
+      needsReview,
+    });
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    await handleJobFailure(
+      {
+        ...updatedJob,
+        maxAttempts:
+          (updatedJob as typeof updatedJob & { maxAttempts?: number }).maxAttempts ??
+          MAX_ATTEMPTS,
+        errorLog:
+          (updatedJob as typeof updatedJob & { errorLog?: unknown }).errorLog ?? null,
+      },
+      err,
+    );
   }
 }
 
-async function tick() {
-  if (running) return;
-  running = true;
+// ---------------------------------------------------------------------------
+// Worker loop
+// ---------------------------------------------------------------------------
+
+async function tick(): Promise<void> {
+  if (workerRunning) return;
+  workerRunning = true;
   try {
     await processSingleJob();
+  } catch (err) {
+    logger.error("Unexpected error in processing worker tick", {
+      error: err instanceof Error ? err.message : String(err),
+    });
   } finally {
-    running = false;
+    workerRunning = false;
   }
 }
 
-export async function enqueueProcessing(documentId: string): Promise<void> {
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export async function enqueueProcessing(
+  documentId: string,
+  options?: { maxAttempts?: number; delayMs?: number },
+): Promise<void> {
+  const scheduledAt = options?.delayMs
+    ? new Date(Date.now() + options.delayMs)
+    : new Date();
   await prisma.processingJob.create({
     data: {
       documentId,
       status: "queued",
-      scheduledAt: new Date(),
-    },
+      scheduledAt,
+      maxAttempts: options?.maxAttempts ?? MAX_ATTEMPTS,
+    } as never,
   });
 }
 
 export function startProcessingWorker(intervalMs = 2000): void {
-  if (timer) return;
-  timer = setInterval(() => {
+  if (workerTimer) return;
+  workerTimer = setInterval(() => {
     void tick();
   }, intervalMs);
+  logger.info("Processing worker started", { intervalMs });
 }
 
 export function stopProcessingWorker(): void {
-  if (!timer) return;
-  clearInterval(timer);
-  timer = null;
+  if (!workerTimer) return;
+  clearInterval(workerTimer);
+  workerTimer = null;
+  logger.info("Processing worker stopped");
 }
+
+// Exported for tests
+export { processSingleJob, handleJobFailure, runExtraction };

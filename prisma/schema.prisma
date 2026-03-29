@@ -7,59 +7,81 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         String   @default("uploader")
+  displayName  String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  uploadedDocuments Document[] @relation("UploadedBy")
+  reviewedDocuments Document[] @relation("ReviewedBy")
+}
+
 model Document {
-  id                   String    @id
-  title                String
-  description          String    @default("")
-  author               String    @default("Unknown")
-  year                 Int
-  month                Int?
-  category             String
-  type                 String
-  financialCategory    String?
+  id                    String    @id
+  title                 String
+  description           String    @default("")
+  author                String    @default("Unknown")
+  year                  Int
+  month                 Int?
+  category              String
+  type                  String
+  financialCategory     String?
   financialDocumentType String?
-  tags                 Json
-  keywords             Json
-  originalFileName     String?
-  mimeType             String?
-  fileSize             Int?
-  fileUrl              String
-  filePath             String?
-  processingStatus     String
-  ocrStatus            String
-  extractedText        String    @default("") @db.Text
-  extractedMetadata    Json
-  classificationResult Json?
-  intakeSource         String
-  sourceReference      String?
-  department           String?
-  createdAt            DateTime
-  updatedAt            DateTime  @updatedAt
-  importedAt           DateTime
-  processingHistory    Json
-  status               String?
-  statusUpdatedAt      DateTime?
-  auditTrail           Json?
-  extraction           Json?
-  duplicateCheck       Json?
-  review               Json?
-  searchIndex          Json?
-  needsReview          Boolean   @default(false)
-  aiSummary            String    @default("") @db.Text
-  jobs                 ProcessingJob[]
+  tags                  Json
+  keywords              Json
+  originalFileName      String?
+  mimeType              String?
+  fileSize              Int?
+  fileUrl               String
+  filePath              String?
+  processingStatus      String
+  ocrStatus             String
+  extractedText         String    @default("") @db.Text
+  extractedMetadata     Json
+  classificationResult  Json?
+  intakeSource          String
+  sourceReference       String?
+  department            String?
+  createdAt             DateTime
+  updatedAt             DateTime  @updatedAt
+  importedAt            DateTime
+  processingHistory     Json
+  status                String?
+  statusUpdatedAt       DateTime?
+  auditTrail            Json?
+  extraction            Json?
+  duplicateCheck        Json?
+  review                Json?
+  searchIndex           Json?
+  needsReview           Boolean   @default(false)
+  aiSummary             String    @default("") @db.Text
+
+  uploadedById  String?
+  reviewedById  String?
+  uploadedBy    User?   @relation("UploadedBy", fields: [uploadedById], references: [id])
+  reviewedBy    User?   @relation("ReviewedBy", fields: [reviewedById], references: [id])
+
+  jobs ProcessingJob[]
 }
 
 model ProcessingJob {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   documentId  String
-  status      String   @default("queued")
-  attempts    Int      @default(0)
+  status      String    @default("queued")
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
   error       String?
-  scheduledAt DateTime @default(now())
+  errorLog    Json?
+  scheduledAt DateTime  @default(now())
+  nextRetryAt DateTime?
   startedAt   DateTime?
   completedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 

@@ -41,7 +41,7 @@ export const imageOcrExtractor: TextExtractorAdapter = {
   },
 
   async extract(file: File): Promise<ExtractedContent> {
-    let worker: { recognize: (input: Blob) => Promise<{ data: { text?: string; confidence?: number } }>; terminate: () => Promise<void> } | null = null;
+    let worker: { recognize: (input: Blob) => Promise<{ data: { text?: string; confidence?: number } }>; terminate: () => Promise<unknown> } | null = null;
 
     const fileBytes = new Uint8Array(await readBlobAsArrayBuffer(file));
     if (!hasImageMagicBytes(fileBytes)) {

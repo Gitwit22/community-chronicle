@@ -1,3 +1,5 @@
+import type { Document } from "@prisma/client";
+
 type JsonObject = Record<string, unknown>;
 
 function asStringArray(value: unknown): string[] {
@@ -21,7 +23,7 @@ function asObjectArray(value: unknown): JsonObject[] {
   return [];
 }
 
-export function toApiDocument(doc: any) {
+export function toApiDocument(doc: Document) {
   return {
     id: doc.id,
     title: doc.title,

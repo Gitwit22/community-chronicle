@@ -15,7 +15,7 @@ import { useDocuments, useDocumentYears, useResolveReview } from "@/hooks/useDoc
 import { searchDocuments } from "@/services/documentStore";
 import { resolveReview } from "@/services/reviewQueueService";
 import { retryProcessing } from "@/services/processingPipeline";
-import type { ArchiveDocument } from "@/types/document";
+import type { ArchiveDocument, ReviewMetadata } from "@/types/document";
 
 const Index = () => {
   const [search, setSearch] = useState("");
@@ -48,12 +48,14 @@ const Index = () => {
   };
 
   const handleReviewResolve = (docId: string, resolution: string) => {
+    const typedResolution = resolution as ReviewMetadata["resolution"];
+
     if (resolution === "reprocessed") {
       retryProcessing(docId);
     } else {
-      resolveReview(docId, resolution as any, undefined);
+      resolveReview(docId, typedResolution, undefined);
     }
-    resolveReviewMutation.mutate({ docId, resolution: resolution as any });
+    resolveReviewMutation.mutate({ docId, resolution: typedResolution });
   };
 
   return (
