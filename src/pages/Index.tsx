@@ -12,7 +12,6 @@ import Timeline from "@/components/Timeline";
 import ArchiveDashboard from "@/components/ArchiveDashboard";
 import ReviewQueuePanel from "@/components/ReviewQueuePanel";
 import { useDocuments, useDocumentYears, useResolveReview } from "@/hooks/useDocuments";
-import { searchDocuments } from "@/services/documentStore";
 import { resolveReview } from "@/services/reviewQueueService";
 import { retryProcessing } from "@/services/processingPipeline";
 import type { ArchiveDocument, ReviewMetadata } from "@/types/document";
@@ -29,19 +28,40 @@ const Index = () => {
   const resolveReviewMutation = useResolveReview();
 
   const filtered = useMemo(() => {
-    return searchDocuments({
-      search: search || undefined,
-      year: filters.year || undefined,
-      month: filters.month || undefined,
-      category: filters.category || undefined,
-      type: filters.type || undefined,
-      financialCategory: filters.financialCategory || undefined,
-      financialDocumentType: filters.financialDocumentType || undefined,
-      intakeSource: filters.intakeSource || undefined,
-      processingStatus: filters.processingStatus || undefined,
+    const q = search.trim().toLowerCase();
+
+    return allDocuments.filter((doc) => {
+      if (q) {
+        const haystack = [
+          doc.title,
+          doc.description,
+          doc.author,
+          doc.extractedText,
+          ...doc.tags,
+          ...doc.keywords,
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        if (!haystack.includes(q)) {
+          return false;
+        }
+      }
+
+      if (filters.year && doc.year !== Number(filters.year)) return false;
+      if (filters.month && doc.month !== Number(filters.month)) return false;
+      if (filters.category && doc.category !== filters.category) return false;
+      if (filters.type && doc.type !== filters.type) return false;
+      if (filters.financialCategory && doc.financialCategory !== filters.financialCategory) return false;
+      if (filters.financialDocumentType && doc.financialDocumentType !== filters.financialDocumentType) return false;
+      if (filters.intakeSource && doc.intakeSource !== filters.intakeSource) return false;
+      if (filters.processingStatus && doc.processingStatus !== filters.processingStatus) return false;
+
+      return true;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, filters, allDocuments.length]);
+  }, [allDocuments, filters, search]);
+
+  const documentCount = allDocuments.length;
 
   const handleDashboardFilter = (status: string) => {
     setFilters({ year: "", month: "", category: "", type: "", financialCategory: "", financialDocumentType: "", intakeSource: "", processingStatus: status });
@@ -79,7 +99,7 @@ const Index = () => {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 text-sm text-muted-foreground font-body">
               <FileText className="h-4 w-4" />
-              <span>{allDocuments.length} documents</span>
+              <span>{documentCount} documents</span>
             </div>
             <Button
               onClick={() => setUploadOpen(true)}
