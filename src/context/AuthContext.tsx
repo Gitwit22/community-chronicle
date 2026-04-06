@@ -3,6 +3,10 @@ import type { ReactNode } from "react";
 import type { AuthUser, LoginCredentials, LoginResult } from "@/auth/types";
 import { AuthErrorCode } from "@/auth/types";
 
+// When VITE_API_URL is not set, requests are made to relative paths (same origin).
+// This is correct for production deployments where the API is served from the same host,
+// and for local dev when Vite's proxy is configured. Set VITE_API_URL explicitly to
+// point at a different host (e.g. http://localhost:4000 during split dev).
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
 const TOKEN_KEY = "chronicle_auth_token";
 const USER_KEY = "chronicle_auth_user";
