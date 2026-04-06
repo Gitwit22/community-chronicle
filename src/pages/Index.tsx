@@ -1,5 +1,15 @@
 import { useState, useMemo } from "react";
-import { Clock, FileText, Search as SearchIcon, Shield, Database, Upload, Globe, PenLine, LayoutDashboard, Eye, Settings } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Clock, FileText, Search as SearchIcon, Shield, Database, Upload, Globe, PenLine, LayoutDashboard, Eye, Settings, LogOut, User } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import SearchBar from "@/components/SearchBar";
@@ -18,6 +28,8 @@ import { retryProcessing } from "@/services/processingPipeline";
 import type { ArchiveDocument, ReviewMetadata } from "@/types/document";
 
 const Index = () => {
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({ year: "", month: "", category: "", type: "", financialCategory: "", financialDocumentType: "", intakeSource: "", processingStatus: "" });
   const [selectedDoc, setSelectedDoc] = useState<ArchiveDocument | null>(null);
@@ -27,6 +39,11 @@ const Index = () => {
   const { data: allDocuments = [], isLoading } = useDocuments();
   const { data: years = [] } = useDocumentYears();
   const resolveReviewMutation = useResolveReview();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -119,6 +136,30 @@ const Index = () => {
               <PenLine className="h-4 w-4" />
               New Entry
             </Button>
+            {/* User menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="gap-2 font-body">
+                  <User className="h-4 w-4" />
+                  <span className="hidden sm:inline">{user?.displayName || user?.email || "Account"}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel className="font-body text-xs text-muted-foreground font-normal">
+                  Signed in as
+                  <br />
+                  <span className="font-semibold text-foreground">{user?.email}</span>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="gap-2 font-body text-sm cursor-pointer"
+                  onSelect={handleLogout}
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>
