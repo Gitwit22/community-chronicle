@@ -1,56 +1,61 @@
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 import type { ReactNode } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/context/AuthContext";
 
-interface ProtectedRouteProps {
-  children: ReactNode;
-  /** Minimum role required. Defaults to any authenticated user. */
-  requiredRole?: "uploader" | "reviewer" | "admin";
-}
-
-const ROLE_LEVEL: Record<string, number> = { uploader: 1, reviewer: 2, admin: 3 };
+const ROLE_LEVEL: Record<string, number> = {
+  uploader: 1,
+  reviewer: 2,
+  admin: 3,
+};
 
 /**
  * Tenant-aware route guard.
  *
  * Decision tree:
- *  1. Still loading session  → render nothing (avoids flash)
- *  2. Not authenticated      → /login
- *  3. Authenticated but no tenant context (isInitialized = false) → /setup
- *  4. Wrong role             → /login (simple denial; could be a 403 page)
- *  5. All checks pass        → render children
+ *  1. Still loading session                -> spinner
+ *  2. Not authenticated                    -> /login
+ *  3. Not initialized or missing org       -> /org-setup
+ *  4. Missing/wrong program domain context -> /org-setup
+ *  5. Role insufficient (if requiredRole)  -> /login
+ *  6. Otherwise                            -> render children
  */
-export default function ProtectedRoute({
+export function ProtectedRoute({
   children,
   requiredRole,
-}: ProtectedRouteProps) {
-  const { isLoading, user, isInitialized, role } = useAuth();
-  const location = useLocation();
+}: {
+  children: ReactNode;
+  requiredRole?: "uploader" | "reviewer" | "admin";
+}) {
+  const { user, appInitState, isLoading, role, programDomain } = useAuth();
 
   if (isLoading) {
-    // Neutral loading state — prevents flash of redirect on refresh
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+        <div className="h-10 w-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
       </div>
     );
   }
 
   if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    return <Navigate to="/login" replace />;
   }
 
-  if (!isInitialized) {
-    return <Navigate to="/setup" replace />;
+  if (appInitState === "not_initialized" || appInitState === "no_org") {
+    return <Navigate to="/org-setup" replace />;
+  }
+
+  if (!programDomain || programDomain !== "community-chronicle") {
+    return <Navigate to="/org-setup" replace />;
   }
 
   if (
     requiredRole &&
     (ROLE_LEVEL[role ?? ""] ?? 0) < (ROLE_LEVEL[requiredRole] ?? 0)
   ) {
-    // Authenticated but insufficient role — go back to login for now
     return <Navigate to="/login" replace />;
   }
 
   return <>{children}</>;
 }
+
+export default ProtectedRoute;

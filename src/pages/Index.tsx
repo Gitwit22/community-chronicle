@@ -1,5 +1,7 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { Clock, FileText, Search as SearchIcon, Shield, Database, Upload, Globe, PenLine, LayoutDashboard, Eye, Settings, LogOut, User, Building2, ChevronDown } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,7 +27,6 @@ import { useDocuments, useDocumentYears, useResolveReview } from "@/hooks/useDoc
 import { resolveReview } from "@/services/reviewQueueService";
 import { retryProcessing } from "@/services/processingPipeline";
 import type { ArchiveDocument, ReviewMetadata } from "@/types/document";
-import { useAuth } from "@/contexts/AuthContext";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "Admin",
@@ -34,7 +35,8 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 const Index = () => {
-  const { user, organizationId, programDomain, role, logout } = useAuth();
+  const navigate = useNavigate();
+  const { user, organizationId, organizationName, programDomain, role, logout } = useAuth();
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({ year: "", month: "", category: "", type: "", financialCategory: "", financialDocumentType: "", intakeSource: "", processingStatus: "" });
   const [selectedDoc, setSelectedDoc] = useState<ArchiveDocument | null>(null);
@@ -44,6 +46,11 @@ const Index = () => {
   const { data: allDocuments = [], isLoading } = useDocuments();
   const { data: years = [] } = useDocumentYears();
   const resolveReviewMutation = useResolveReview();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -136,8 +143,6 @@ const Index = () => {
               <PenLine className="h-4 w-4" />
               New Entry
             </Button>
-
-            {/* Account / org menu */}
             {user && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -164,26 +169,23 @@ const Index = () => {
                   <div className="px-2 py-1.5 space-y-1.5">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground font-body">
                       <Building2 className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{organizationId ?? "—"}</span>
+                      <span className="truncate">{organizationName || organizationId || "-"}</span>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground font-body">
                       <Settings className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{programDomain ?? "—"}</span>
+                      <span className="truncate">{programDomain || "community-chronicle"}</span>
                     </div>
-                    <Badge
-                      variant="secondary"
-                      className="text-xs font-body h-5"
-                    >
+                    <Badge variant="secondary" className="text-xs font-body h-5">
                       {ROLE_LABEL[role ?? ""] ?? role}
                     </Badge>
                   </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    className="gap-2 font-body text-destructive focus:text-destructive cursor-pointer"
-                    onClick={logout}
+                    className="gap-2 font-body text-sm cursor-pointer"
+                    onSelect={handleLogout}
                   >
                     <LogOut className="h-4 w-4" />
-                    Sign out
+                    Sign Out
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

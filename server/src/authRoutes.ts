@@ -16,11 +16,12 @@ const router = express.Router();
 
 type AuthUserRecord = {
   id: string;
-  organizationId: string;
   email: string;
   passwordHash: string;
   role: string;
   displayName: string;
+  organizationId?: string | null;
+  organizationName?: string | null;
 };
 
 const prismaUser = prisma as typeof prisma & {
@@ -38,6 +39,30 @@ const prismaUser = prisma as typeof prisma & {
     }) => Promise<AuthUserRecord>;
   };
 };
+
+/**
+ * Derive AppInitState for the response.
+ * - "not_initialized" : no users exist at all
+ * - "no_org"          : user exists but has no org assignment
+ * - "ready"           : user has org context
+ */
+function resolveAppInitState(user: AuthUserRecord): "not_initialized" | "no_org" | "ready" {
+  if (!user.organizationId) return "no_org";
+  return "ready";
+}
+
+/** Build the safe user payload included in API responses. */
+function buildUserPayload(user: AuthUserRecord, organizationId: string) {
+  return {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    displayName: user.displayName,
+    organizationId,
+    organizationName: user.organizationName ?? undefined,
+    programDomain: CURRENT_PROGRAM_DOMAIN,
+  };
+}
 
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
@@ -65,6 +90,7 @@ router.post("/login", async (req, res) => {
   }
 
   const tenantScope = getTenantScopeForUser(user);
+  const appInitState = resolveAppInitState(user);
   const token = signToken({
     userId: user.id,
     email: user.email,
@@ -72,23 +98,13 @@ router.post("/login", async (req, res) => {
     organizationId: tenantScope.organizationId,
     programDomain: CURRENT_PROGRAM_DOMAIN,
   });
-  logger.info("User logged in", {
-    userId: user.id,
-    role: user.role,
-    organizationId: tenantScope.organizationId,
-    programDomain: CURRENT_PROGRAM_DOMAIN,
-  });
+  logger.info("User logged in", { userId: user.id, role: user.role, organizationId: tenantScope.organizationId, programDomain: CURRENT_PROGRAM_DOMAIN });
 
   res.json({
     token,
-    user: {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      displayName: user.displayName,
-      organizationId: tenantScope.organizationId,
-      programDomain: CURRENT_PROGRAM_DOMAIN,
-    },
+    user: buildUserPayload(user, tenantScope.organizationId),
+    appInitialized: appInitState === "ready",
+    appInitState,
   });
 });
 
@@ -155,19 +171,14 @@ router.post(
     });
 
     res.status(201).json({
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        displayName: user.displayName,
-        organizationId: tenantScope.organizationId,
-        programDomain: CURRENT_PROGRAM_DOMAIN,
-      },
+      user: buildUserPayload(user, tenantScope.organizationId),
     });
   },
 );
 
 // GET /api/auth/me
+// Returns the current user with full org context and app-init state.
+// Frontend calls this on mount to validate the stored token and refresh context.
 router.get("/me", requireAuth, async (req, res) => {
   const payload = getRequestUser(req);
   if (!payload) {
@@ -179,15 +190,12 @@ router.get("/me", requireAuth, async (req, res) => {
     res.status(404).json({ error: "User not found" });
     return;
   }
+  const tenantScope = getTenantScopeForUser(user);
+  const appInitState = resolveAppInitState(user);
   res.json({
-    user: {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      displayName: user.displayName,
-      organizationId: user.organizationId,
-      programDomain: CURRENT_PROGRAM_DOMAIN,
-    },
+    user: buildUserPayload(user, tenantScope.organizationId),
+    appInitialized: appInitState === "ready",
+    appInitState,
   });
 });
 
