@@ -29,7 +29,7 @@ import type { ArchiveDocument, ReviewMetadata } from "@/types/document";
 
 const Index = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, organizationName, role, logout } = useAuth();
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({ year: "", month: "", category: "", type: "", financialCategory: "", financialDocumentType: "", intakeSource: "", processingStatus: "" });
   const [selectedDoc, setSelectedDoc] = useState<ArchiveDocument | null>(null);
@@ -144,11 +144,20 @@ const Index = () => {
                   <span className="hidden sm:inline">{user?.displayName || user?.email || "Account"}</span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuLabel className="font-body text-xs text-muted-foreground font-normal">
-                  Signed in as
-                  <br />
-                  <span className="font-semibold text-foreground">{user?.email}</span>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuLabel className="font-body font-normal pb-1">
+                  <p className="text-xs text-muted-foreground">Signed in as</p>
+                  <p className="font-semibold text-sm text-foreground truncate">{user?.email}</p>
+                  {organizationName && (
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                      {organizationName}
+                    </p>
+                  )}
+                  {role && (
+                    <span className="inline-block mt-1 text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                      {role}
+                    </span>
+                  )}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

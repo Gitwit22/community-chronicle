@@ -7,6 +7,10 @@ export interface AuthTokenPayload {
   userId: string;
   email: string;
   role: string;
+  /** Org this user belongs to (undefined until org is created). */
+  organizationId?: string;
+  /** Suite program this session is scoped to. */
+  programDomain?: string;
 }
 
 // Typed role hierarchy

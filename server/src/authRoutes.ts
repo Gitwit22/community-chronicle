@@ -18,6 +18,8 @@ type AuthUserRecord = {
   passwordHash: string;
   role: string;
   displayName: string;
+  organizationId?: string | null;
+  organizationName?: string | null;
 };
 
 const prismaUser = prisma as typeof prisma & {
@@ -29,6 +31,33 @@ const prismaUser = prisma as typeof prisma & {
     }) => Promise<AuthUserRecord>;
   };
 };
+
+/** The suite program Chronicle sessions are scoped to. */
+const PROGRAM_DOMAIN = "community-chronicle";
+
+/**
+ * Derive AppInitState for the response.
+ * - "not_initialized" : no users exist at all
+ * - "no_org"          : user exists but has no org assignment
+ * - "ready"           : user has org context
+ */
+function resolveAppInitState(user: AuthUserRecord): "not_initialized" | "no_org" | "ready" {
+  if (!user.organizationId) return "no_org";
+  return "ready";
+}
+
+/** Build the safe user payload included in API responses. */
+function buildUserPayload(user: AuthUserRecord) {
+  return {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    displayName: user.displayName,
+    organizationId: user.organizationId ?? undefined,
+    organizationName: user.organizationName ?? undefined,
+    programDomain: PROGRAM_DOMAIN,
+  };
+}
 
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
@@ -55,12 +84,20 @@ router.post("/login", async (req, res) => {
     return;
   }
 
-  const token = signToken({ userId: user.id, email: user.email, role: user.role });
-  logger.info("User logged in", { userId: user.id, role: user.role });
+  const token = signToken({
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    organizationId: user.organizationId ?? undefined,
+    programDomain: PROGRAM_DOMAIN,
+  });
+  logger.info("User logged in", { userId: user.id, role: user.role, organizationId: user.organizationId });
 
   res.json({
     token,
-    user: { id: user.id, email: user.email, role: user.role, displayName: user.displayName },
+    user: buildUserPayload(user),
+    appInitialized: !!user.organizationId,
+    appInitState: resolveAppInitState(user),
   });
 });
 
@@ -113,12 +150,14 @@ router.post(
     logger.info("User registered", { userId: user.id, role: user.role });
 
     res.status(201).json({
-      user: { id: user.id, email: user.email, role: user.role, displayName: user.displayName },
+      user: buildUserPayload(user),
     });
   },
 );
 
 // GET /api/auth/me
+// Returns the current user with full org context and app-init state.
+// Frontend calls this on mount to validate the stored token and refresh context.
 router.get("/me", requireAuth, async (req, res) => {
   const payload = getRequestUser(req);
   if (!payload) {
@@ -131,7 +170,9 @@ router.get("/me", requireAuth, async (req, res) => {
     return;
   }
   res.json({
-    user: { id: user.id, email: user.email, role: user.role, displayName: user.displayName },
+    user: buildUserPayload(user),
+    appInitialized: !!user.organizationId,
+    appInitState: resolveAppInitState(user),
   });
 });
 

@@ -4,6 +4,10 @@
  * These interfaces mirror the contracts defined in the Cores repository at
  * packages/auth-core/src/domain/types.ts and packages/auth-core/src/ui/index.ts
  * (Gitwit22/Cores, main branch). They must not contain app-specific UI logic.
+ *
+ * Identity, org, and program context are kept together so this auth shape is
+ * compatible with the broader Nxt Lvl suite (Community Chronicle, StreamLine,
+ * Support Hub, etc.).
  */
 
 // ---------------------------------------------------------------------------
@@ -13,18 +17,64 @@
 export type AuthRole = "uploader" | "reviewer" | "admin";
 
 // ---------------------------------------------------------------------------
+// Org / Program context
+// ---------------------------------------------------------------------------
+
+/**
+ * Organizational context resolved after login.
+ * Carried in the JWT payload and echoed by GET /api/auth/me.
+ * When the application has not been initialized yet these may be undefined.
+ */
+export interface OrgContext {
+  /** Unique identifier of the organization this user belongs to. */
+  organizationId: string;
+  /** Human-readable organization name (for display only). */
+  organizationName: string;
+  /**
+   * Identifies which program/suite-app this session is scoped to.
+   * e.g. "community-chronicle", "streamline", "support-hub"
+   */
+  programDomain: string;
+}
+
+// ---------------------------------------------------------------------------
+// App initialization state
+// ---------------------------------------------------------------------------
+
+/**
+ * Describes whether the application has been set up and whether the
+ * authenticated user has a valid org assignment.
+ *
+ * The frontend uses this to decide which route to send the user to:
+ *   - not_initialized  → /setup (no org/admin exists yet)
+ *   - no_org           → /setup (user exists but has no org)
+ *   - ready            → / (fully configured, proceed normally)
+ */
+export type AppInitState = "unknown" | "not_initialized" | "no_org" | "ready";
+
+// ---------------------------------------------------------------------------
 // User
 // ---------------------------------------------------------------------------
 
 /**
  * Canonical user identity returned by the auth API.
- * Maps to AuthUser in auth-core, scoped to the fields this app exposes.
+ * Maps to AuthUser in auth-core, extended with org/program context so
+ * routing and access decisions can be made without extra round-trips.
  */
 export interface AuthUser {
   id: string;
   email: string;
   displayName: string;
   role: AuthRole;
+  /** Present when the user belongs to an organization. */
+  organizationId?: string;
+  /** Human-readable org name for display. */
+  organizationName?: string;
+  /**
+   * The suite program this session is scoped to.
+   * Defaults to "community-chronicle" for direct Chronicle logins.
+   */
+  programDomain?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,6 +99,21 @@ export interface LoginViewModel {
   password: string;
   isSubmitting: boolean;
   errorMessage?: string;
+}
+
+// ---------------------------------------------------------------------------
+// /api/auth/me response
+// ---------------------------------------------------------------------------
+
+/**
+ * Shape returned by GET /api/auth/me.
+ * Carries full user context plus the app initialization state so the
+ * frontend can make a single call to determine the correct starting route.
+ */
+export interface MeResponse {
+  user: AuthUser;
+  /** Whether the application has been initialized (org + admin user created). */
+  appInitialized: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,7 +150,8 @@ export interface AuthError {
 /**
  * Discriminated union result from the login use case.
  * Mirrors LoginResult in auth-core/domain/types.ts.
+ * On success, appInitState indicates where the user should be routed.
  */
 export type LoginResult =
-  | { success: true; user: AuthUser; token: string }
+  | { success: true; user: AuthUser; token: string; appInitState: AppInitState }
   | { success: false; error: AuthError };

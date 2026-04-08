@@ -8,6 +8,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Index from "./pages/Index.tsx";
 import Landing from "./pages/Landing.tsx";
 import Login from "./pages/Login.tsx";
+import OrgSetup from "./pages/OrgSetup.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -23,7 +24,15 @@ const App = () => (
             {/* Public routes */}
             <Route path="/landing" element={<Landing />} />
             <Route path="/login" element={<Login />} />
-            {/* Redirect bare / to landing for unauthenticated users (ProtectedRoute handles it) */}
+            {/*
+             * /setup is semi-protected: requires a logged-in user but does NOT
+             * require org context (that's the point of this page).
+             */}
+            <Route path="/setup" element={<OrgSetup />} />
+            {/*
+             * / is fully protected: requires auth + org context.
+             * ProtectedRoute redirects to /login or /setup as appropriate.
+             */}
             <Route
               path="/"
               element={
@@ -32,7 +41,7 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
-            {/* Redirect old entry-point hits to landing */}
+            {/* Redirect old entry-point hits */}
             <Route path="/index" element={<Navigate to="/" replace />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

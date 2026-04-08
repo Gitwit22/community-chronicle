@@ -38,7 +38,14 @@ export default function Login() {
     const result = await login({ email: form.email.trim(), password: form.password });
 
     if (result.success) {
-      navigate("/", { replace: true });
+      // Route based on initialization state:
+      //   not_initialized / no_org → setup screen
+      //   ready                    → archive
+      const dest =
+        result.appInitState === "not_initialized" || result.appInitState === "no_org"
+          ? "/setup"
+          : "/";
+      navigate(dest, { replace: true });
     } else {
       setForm((prev) => ({
         ...prev,
