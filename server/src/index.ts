@@ -1,21 +1,34 @@
 import "dotenv/config";
 import { app } from "./app.js";
 import { prisma } from "./db.js";
-import { PORT } from "./config.js";
+import { PORT, NODE_ENV, UPLOAD_DIR, CORS_ORIGIN, BACKEND_URL } from "./config.js";
 import { startProcessingWorker, stopProcessingWorker } from "./processingQueue.js";
 import { logger } from "./logger.js";
 
 async function bootstrap() {
   await prisma.$connect();
+  logger.info("Database connected");
 
   startProcessingWorker();
 
   app.listen(PORT, () => {
-    logger.info(`Community Chronicle API running on http://localhost:${PORT}`);
+    logger.info("Community Chronicle API started", {
+      port: PORT,
+      env: NODE_ENV,
+      uploadDir: UPLOAD_DIR,
+      backendUrl: BACKEND_URL,
+      corsOrigin: CORS_ORIGIN,
+    });
   });
 }
 
-void bootstrap();
+void bootstrap().catch((err) => {
+  logger.error("Failed to start server", {
+    error: err instanceof Error ? err.message : String(err),
+    stack: err instanceof Error ? err.stack : undefined,
+  });
+  process.exit(1);
+});
 
 process.on("SIGINT", async () => {
   stopProcessingWorker();
