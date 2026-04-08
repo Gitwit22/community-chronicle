@@ -111,11 +111,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAppInitState(freshInitState);
       persistSession(storedToken, freshUser);
     } catch {
-      // Network unavailable — trust the cached user for now, but mark state
-      // as unknown so ProtectedRoute can decide conservatively.
-      setAppInitState(initStateFromUser(user));
+      // Network unavailable — keep existing state unchanged, the user will see
+      // whatever was last persisted. The init state remains as resolved from the
+      // cached user (set before this call) so routing still works offline.
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Restore session from localStorage on mount, then validate with server
   useEffect(() => {
@@ -141,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Then verify with the server in the background
     hydrateFromServer(storedToken).finally(() => setIsLoading(false));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hydrateFromServer]);
 
   const refreshSession = useCallback(async () => {
     if (!token) return;
