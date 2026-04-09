@@ -3,11 +3,9 @@ import type { ReactNode } from "react";
 import type { AuthUser, LoginCredentials, LoginResult, AppInitState, MeResponse } from "@/auth/types";
 import { AuthErrorCode } from "@/auth/types";
 
-// When VITE_API_URL is not set, requests are made to relative paths (same origin).
-// This is correct for production deployments where the API is served from the same host,
-// and for local dev when Vite's proxy is configured. Set VITE_API_URL explicitly to
-// point at a different host (e.g. http://localhost:4000 during split dev).
-const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
+// VITE_API_BASE_URL should point to the shared platform backend API prefix,
+// for example: https://nxt-lvl-api.example.com/api.
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api";
 
 const TOKEN_KEY = "chronicle_auth_token";
 const USER_KEY = "chronicle_auth_user";
@@ -92,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /** Call GET /api/auth/me with a given token and update all state. */
   const hydrateFromServer = useCallback(async (storedToken: string): Promise<void> => {
     try {
-      const res = await fetch(`${BASE_URL}/api/auth/me`, {
+      const res = await fetch(`${API_BASE}/auth/me`, {
         headers: { Authorization: `Bearer ${storedToken}` },
       });
       if (!res.ok) {
@@ -150,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (credentials: LoginCredentials): Promise<LoginResult> => {
     try {
-      const res = await fetch(`${BASE_URL}/api/auth/login`, {
+      const res = await fetch(`${API_BASE}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(credentials),

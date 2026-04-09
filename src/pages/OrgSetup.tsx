@@ -42,7 +42,7 @@ export default function OrgSetup() {
   const { user, token, refreshSession, logout } = useAuth();
   const [form, setForm] = useState<SetupForm>(INITIAL);
 
-  const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
+  const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,7 +55,7 @@ export default function OrgSetup() {
     setForm((p) => ({ ...p, isSubmitting: true, errorMessage: undefined }));
 
     try {
-      const res = await fetch(`${BASE_URL}/api/org/setup`, {
+      const res = await fetch(`${API_BASE}/org/setup`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

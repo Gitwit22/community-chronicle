@@ -23,9 +23,7 @@ import Timeline from "@/components/Timeline";
 import ArchiveDashboard from "@/components/ArchiveDashboard";
 import ReviewQueuePanel from "@/components/ReviewQueuePanel";
 import StorageSettingsPanel from "@/components/StorageSettingsPanel";
-import { useDocuments, useDocumentYears, useResolveReview } from "@/hooks/useDocuments";
-import { resolveReview } from "@/services/reviewQueueService";
-import { retryProcessing } from "@/services/processingPipeline";
+import { useDocuments, useDocumentYears, useResolveReview, useRetryProcessing } from "@/hooks/useDocuments";
 import { PROGRAM_DISPLAY_NAME, PROGRAM_SYSTEM_NAME } from "@/lib/programInfo";
 import type { ArchiveDocument, ReviewMetadata } from "@/types/document";
 
@@ -47,6 +45,7 @@ const Index = () => {
   const { data: allDocuments = [], isLoading } = useDocuments();
   const { data: years = [] } = useDocumentYears();
   const resolveReviewMutation = useResolveReview();
+  const retryProcessingMutation = useRetryProcessing();
 
   const handleLogout = () => {
     logout();
@@ -94,13 +93,12 @@ const Index = () => {
   };
 
   const handleReviewResolve = (docId: string, resolution: string) => {
-    const typedResolution = resolution as ReviewMetadata["resolution"];
-
     if (resolution === "reprocessed") {
-      retryProcessing(docId);
-    } else {
-      resolveReview(docId, typedResolution, undefined);
+      retryProcessingMutation.mutate(docId);
+      return;
     }
+
+    const typedResolution = resolution as ReviewMetadata["resolution"];
     resolveReviewMutation.mutate({ docId, resolution: typedResolution });
   };
 
