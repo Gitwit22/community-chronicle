@@ -49,7 +49,7 @@ const Index = () => {
 
   const handleLogout = () => {
     logout();
-    navigate("/login", { replace: true });
+    navigate("/landing", { replace: true });
   };
 
   const filtered = useMemo(() => {

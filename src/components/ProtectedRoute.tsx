@@ -1,17 +1,17 @@
 import { Navigate } from "react-router-dom";
 import { useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { PROGRAM_SYSTEM_NAME } from "@/lib/programInfo";
-import { getSuiteLoginUrl } from "@/lib/suiteLogin";
-
-const SUITE_LOGIN_URL = getSuiteLoginUrl();
+import { getSuiteLoginUrl, rememberPostAuthReturnPath } from "@/lib/suiteLogin";
 
 /** Redirect the browser (hard navigation) to the suite login page. */
-function SuiteLoginRedirect() {
+function SuiteLoginRedirect({ returnTo }: { returnTo: string }) {
   useEffect(() => {
-    window.location.replace(SUITE_LOGIN_URL);
-  }, []);
+    rememberPostAuthReturnPath(returnTo);
+    window.location.replace(getSuiteLoginUrl(returnTo));
+  }, [returnTo]);
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="h-10 w-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
@@ -44,6 +44,8 @@ export function ProtectedRoute({
   requiredRole?: "uploader" | "reviewer" | "admin";
 }) {
   const { user, appInitState, isLoading, role, programDomain } = useAuth();
+  const location = useLocation();
+  const returnTo = `${location.pathname}${location.search}${location.hash}`;
 
   if (isLoading) {
     return (
@@ -54,7 +56,7 @@ export function ProtectedRoute({
   }
 
   if (!user) {
-    return <SuiteLoginRedirect />;
+    return <SuiteLoginRedirect returnTo={returnTo} />;
   }
 
   if (appInitState === "not_initialized" || appInitState === "no_org") {
@@ -69,7 +71,7 @@ export function ProtectedRoute({
     requiredRole &&
     (ROLE_LEVEL[role ?? ""] ?? 0) < (ROLE_LEVEL[requiredRole] ?? 0)
   ) {
-    return <SuiteLoginRedirect />;
+    return <SuiteLoginRedirect returnTo={returnTo} />;
   }
 
   return <>{children}</>;

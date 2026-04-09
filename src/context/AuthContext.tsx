@@ -2,15 +2,12 @@ import { createContext, useContext, useEffect, useState, useCallback } from "rea
 import type { ReactNode } from "react";
 import type {
   AuthUser,
-  LoginCredentials,
-  LoginResult,
   AppInitState,
   MeResponse,
   PlatformLaunchConsumeResult,
 } from "@/auth/types";
 import { AuthErrorCode } from "@/auth/types";
 import { consumeLaunchToken } from "@/services/platformAuth";
-import { getSuiteLoginUrl } from "@/lib/suiteLogin";
 
 // VITE_API_BASE_URL should point to the shared platform backend API prefix,
 // for example: https://nxt-lvl-api.example.com/api.
@@ -45,7 +42,6 @@ interface AuthContextValue {
   appInitState: AppInitState;
   /** True while the initial session hydration is in progress. */
   isLoading: boolean;
-  login: (credentials: LoginCredentials) => Promise<LoginResult>;
   consumePlatformLaunch: (launchToken: string) => Promise<PlatformLaunchConsumeResult>;
   logout: () => void;
   /** Re-validate the session against GET /api/auth/me and refresh context. */
@@ -172,60 +168,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await hydrateFromServer(token);
   }, [token, hydrateFromServer]);
 
-  const login = async (credentials: LoginCredentials): Promise<LoginResult> => {
-    try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credentials),
-      });
-
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        return {
-          success: false,
-          error: {
-            code:
-              res.status === 401
-                ? AuthErrorCode.INVALID_CREDENTIALS
-                : AuthErrorCode.UNKNOWN,
-            message: data.error ?? "Login failed. Please try again.",
-          },
-        };
-      }
-
-      const data = (await res.json()) as {
-        token: string;
-        user: AuthUser;
-        appInitState?: AppInitState;
-      };
-
-      const resolvedInitState = applySession(
-        data.token,
-        data.user,
-        data.appInitState,
-        setToken,
-        setUser,
-        setAppInitState,
-      );
-
-      return {
-        success: true,
-        user: data.user,
-        token: data.token,
-        appInitState: resolvedInitState,
-      };
-    } catch {
-      return {
-        success: false,
-        error: {
-          code: AuthErrorCode.UNKNOWN,
-          message: "Unable to reach the server. Please try again.",
-        },
-      };
-    }
-  };
-
   const consumePlatformLaunch = useCallback(
     async (launchToken: string): Promise<PlatformLaunchConsumeResult> => {
       if (!launchToken.trim()) {
@@ -278,7 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setAppInitState("unknown");
     clearStorage();
-    window.location.replace(getSuiteLoginUrl());
+    window.location.replace("/landing");
   };
 
   const derived = orgFieldsFromUser(user);
@@ -291,7 +233,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ...derived,
         appInitState,
         isLoading,
-        login,
         consumePlatformLaunch,
         logout,
         refreshSession,

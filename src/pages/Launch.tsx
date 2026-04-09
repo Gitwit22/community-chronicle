@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { getSuiteLoginUrl } from "@/lib/suiteLogin";
+import { consumePostAuthReturnPath, getSuiteLoginUrl } from "@/lib/suiteLogin";
 
 function getLaunchTokenFromQuery(): string | null {
   const params = new URLSearchParams(window.location.search);
@@ -11,13 +11,13 @@ function getLaunchTokenFromQuery(): string | null {
 export default function Launch() {
   const navigate = useNavigate();
   const { isLoading, user, consumePlatformLaunch } = useAuth();
-  const suiteLoginUrl = useMemo(() => getSuiteLoginUrl(), []);
+  const suiteLoginUrl = useMemo(() => getSuiteLoginUrl("/"), []);
 
   useEffect(() => {
     if (isLoading) return;
 
     if (user) {
-      navigate("/", { replace: true });
+      navigate(consumePostAuthReturnPath() ?? "/", { replace: true });
       return;
     }
 
@@ -31,7 +31,7 @@ export default function Launch() {
     consumePlatformLaunch(launchToken).then((result) => {
       if (cancelled) return;
       if (result.success) {
-        navigate("/", { replace: true });
+        navigate(consumePostAuthReturnPath() ?? "/", { replace: true });
         return;
       }
       window.location.replace(suiteLoginUrl);
