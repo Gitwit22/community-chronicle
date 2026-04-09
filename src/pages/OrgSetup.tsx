@@ -90,7 +90,6 @@ export default function OrgSetup() {
 
   const handleLogout = () => {
     logout();
-    navigate("/login", { replace: true });
   };
 
   return (

@@ -1,7 +1,23 @@
 import { Navigate } from "react-router-dom";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { PROGRAM_SYSTEM_NAME } from "@/lib/programInfo";
+import { getSuiteLoginUrl } from "@/lib/suiteLogin";
+
+const SUITE_LOGIN_URL = getSuiteLoginUrl();
+
+/** Redirect the browser (hard navigation) to the suite login page. */
+function SuiteLoginRedirect() {
+  useEffect(() => {
+    window.location.replace(SUITE_LOGIN_URL);
+  }, []);
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="h-10 w-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+    </div>
+  );
+}
 
 const ROLE_LEVEL: Record<string, number> = {
   uploader: 1,
@@ -14,10 +30,10 @@ const ROLE_LEVEL: Record<string, number> = {
  *
  * Decision tree:
  *  1. Still loading session                -> spinner
- *  2. Not authenticated                    -> /login
+ *  2. Not authenticated                    -> suite /login (external)
  *  3. Not initialized or missing org       -> /org-setup
  *  4. Missing/wrong program domain context -> /org-setup
- *  5. Role insufficient (if requiredRole)  -> /login
+ *  5. Role insufficient (if requiredRole)  -> suite /login (external)
  *  6. Otherwise                            -> render children
  */
 export function ProtectedRoute({
@@ -38,7 +54,7 @@ export function ProtectedRoute({
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <SuiteLoginRedirect />;
   }
 
   if (appInitState === "not_initialized" || appInitState === "no_org") {
@@ -53,7 +69,7 @@ export function ProtectedRoute({
     requiredRole &&
     (ROLE_LEVEL[role ?? ""] ?? 0) < (ROLE_LEVEL[requiredRole] ?? 0)
   ) {
-    return <Navigate to="/login" replace />;
+    return <SuiteLoginRedirect />;
   }
 
   return <>{children}</>;

@@ -155,3 +155,24 @@ export interface AuthError {
 export type LoginResult =
   | { success: true; user: AuthUser; token: string; appInitState: AppInitState }
   | { success: false; error: AuthError };
+
+// ---------------------------------------------------------------------------
+// Platform launch consume
+// ---------------------------------------------------------------------------
+
+/** Request body for POST /api/platform-auth/consume. */
+export interface PlatformLaunchConsumeRequest {
+  launchToken: string;
+}
+
+/** Success payload from the Chronicle backend after platform validation. */
+export interface PlatformLaunchConsumeResponse {
+  token: string;
+  user: AuthUser;
+  appInitState?: AppInitState;
+}
+
+/** Result returned by frontend launch-consume flow. */
+export type PlatformLaunchConsumeResult =
+  | { success: true; user: AuthUser; token: string; appInitState: AppInitState }
+  | { success: false; error: AuthError };

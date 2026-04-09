@@ -1,7 +1,9 @@
-import { Link } from "react-router-dom";
 import { Shield, Globe, Database, Upload, Search, BookOpen, Users, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PROGRAM_DISPLAY_NAME } from "@/lib/programInfo";
+import { getSuiteLoginUrl } from "@/lib/suiteLogin";
+
+const SUITE_LOGIN_URL = getSuiteLoginUrl();
 
 const features = [
   {
@@ -61,9 +63,9 @@ export default function Landing() {
               </p>
             </div>
           </div>
-          <Link to="/login">
+          <a href={SUITE_LOGIN_URL}>
             <Button className="font-body bg-primary hover:bg-primary/90">Sign In</Button>
-          </Link>
+          </a>
         </div>
       </header>
 
@@ -85,11 +87,11 @@ export default function Landing() {
             advocates who need reliable access to history.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link to="/login">
+            <a href={SUITE_LOGIN_URL}>
               <Button size="lg" className="font-body px-8 bg-primary hover:bg-primary/90">
                 Sign In to the Archive
               </Button>
-            </Link>
+            </a>
             <a
               href="#features"
               className="text-sm font-body text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
@@ -144,11 +146,11 @@ export default function Landing() {
             Sign in with your account credentials to upload documents, review the queue,
             and explore the full archive.
           </p>
-          <Link to="/login">
+          <a href={SUITE_LOGIN_URL}>
             <Button size="lg" className="font-body px-10 bg-primary hover:bg-primary/90">
               Sign In
             </Button>
-          </Link>
+          </a>
         </div>
       </section>
 

@@ -54,8 +54,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearStoredToken();
     setToken(null);
     setUser(null);
-    // Hard-navigate to /login so React Router state is fully reset
-    window.location.href = "/login";
+    // Hard-navigate to suite login so React Router state is fully reset
+    window.location.replace(`${(import.meta.env.VITE_SUITE_URL as string | undefined) ?? ""}/login`);
   }, []);
 
   /**

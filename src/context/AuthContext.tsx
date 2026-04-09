@@ -1,7 +1,16 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import type { ReactNode } from "react";
-import type { AuthUser, LoginCredentials, LoginResult, AppInitState, MeResponse } from "@/auth/types";
+import type {
+  AuthUser,
+  LoginCredentials,
+  LoginResult,
+  AppInitState,
+  MeResponse,
+  PlatformLaunchConsumeResult,
+} from "@/auth/types";
 import { AuthErrorCode } from "@/auth/types";
+import { consumeLaunchToken } from "@/services/platformAuth";
+import { getSuiteLoginUrl } from "@/lib/suiteLogin";
 
 // VITE_API_BASE_URL should point to the shared platform backend API prefix,
 // for example: https://nxt-lvl-api.example.com/api.
@@ -37,6 +46,7 @@ interface AuthContextValue {
   /** True while the initial session hydration is in progress. */
   isLoading: boolean;
   login: (credentials: LoginCredentials) => Promise<LoginResult>;
+  consumePlatformLaunch: (launchToken: string) => Promise<PlatformLaunchConsumeResult>;
   logout: () => void;
   /** Re-validate the session against GET /api/auth/me and refresh context. */
   refreshSession: () => Promise<void>;
@@ -75,6 +85,22 @@ function initStateFromUser(user: AuthUser | null): AppInitState {
   if (!user) return "unknown";
   if (!user.organizationId) return "no_org";
   return "ready";
+}
+
+function applySession(
+  sessionToken: string,
+  sessionUser: AuthUser,
+  sessionInitState: AppInitState | undefined,
+  setToken: (value: string | null) => void,
+  setUser: (value: AuthUser | null) => void,
+  setAppInitState: (value: AppInitState) => void,
+) {
+  const resolvedInitState: AppInitState = sessionInitState ?? initStateFromUser(sessionUser);
+  setToken(sessionToken);
+  setUser(sessionUser);
+  setAppInitState(resolvedInitState);
+  persistSession(sessionToken, sessionUser);
+  return resolvedInitState;
 }
 
 // ---------------------------------------------------------------------------
@@ -174,13 +200,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         appInitState?: AppInitState;
       };
 
-      const resolvedInitState: AppInitState =
-        data.appInitState ?? initStateFromUser(data.user);
-
-      setToken(data.token);
-      setUser(data.user);
-      setAppInitState(resolvedInitState);
-      persistSession(data.token, data.user);
+      const resolvedInitState = applySession(
+        data.token,
+        data.user,
+        data.appInitState,
+        setToken,
+        setUser,
+        setAppInitState,
+      );
 
       return {
         success: true,
@@ -199,11 +226,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const consumePlatformLaunch = useCallback(
+    async (launchToken: string): Promise<PlatformLaunchConsumeResult> => {
+      if (!launchToken.trim()) {
+        return {
+          success: false,
+          error: {
+            code: AuthErrorCode.UNAUTHORIZED,
+            message: "Launch token is required.",
+          },
+        };
+      }
+
+      try {
+        const data = await consumeLaunchToken({ launchToken: launchToken.trim() });
+        const resolvedInitState = applySession(
+          data.token,
+          data.user,
+          data.appInitState,
+          setToken,
+          setUser,
+          setAppInitState,
+        );
+        return {
+          success: true,
+          user: data.user,
+          token: data.token,
+          appInitState: resolvedInitState,
+        };
+      } catch (error) {
+        clearStorage();
+        setToken(null);
+        setUser(null);
+        setAppInitState("unknown");
+
+        const message = error instanceof Error ? error.message : "Launch validation failed.";
+        return {
+          success: false,
+          error: {
+            code: AuthErrorCode.UNAUTHORIZED,
+            message,
+          },
+        };
+      }
+    },
+    [],
+  );
+
   const logout = () => {
     setUser(null);
     setToken(null);
     setAppInitState("unknown");
     clearStorage();
+    window.location.replace(getSuiteLoginUrl());
   };
 
   const derived = orgFieldsFromUser(user);
@@ -217,6 +292,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         appInitState,
         isLoading,
         login,
+        consumePlatformLaunch,
         logout,
         refreshSession,
       }}
