@@ -12,6 +12,8 @@ export interface AuthUser {
   displayName: string;
   organizationId: string;
   programDomain: string;
+  /** "platform" — authenticated via Suite handoff. "local" — direct Chronicle login. */
+  identitySource?: "platform" | "local";
 }
 
 /** Response shape from POST /api/auth/login */

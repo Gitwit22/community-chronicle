@@ -75,6 +75,12 @@ export interface AuthUser {
    * Defaults to "community-chronicle" for direct Chronicle logins.
    */
   programDomain?: string;
+  /**
+   * How this user was authenticated into Chronicle.
+   *  "platform" — authenticated via Suite handoff
+   *  "local"    — registered/logged in directly inside Chronicle
+   */
+  identitySource?: "platform" | "local";
 }
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@ import { Shield, Globe, Database, Upload, Search, BookOpen, Users, FileText } fr
 import { Button } from "@/components/ui/button";
 import { PROGRAM_DISPLAY_NAME } from "@/lib/programInfo";
 import { getSuiteLoginUrl } from "@/lib/suiteLogin";
+import { Link } from "react-router-dom";
 
 const SUITE_LOGIN_URL = getSuiteLoginUrl();
 
@@ -63,9 +64,14 @@ export default function Landing() {
               </p>
             </div>
           </div>
-          <a href={SUITE_LOGIN_URL}>
-            <Button className="font-body bg-primary hover:bg-primary/90">Sign In</Button>
-          </a>
+          <div className="flex items-center gap-2">
+            <Link to="/login">
+              <Button variant="outline" className="font-body">App Login</Button>
+            </Link>
+            <a href={SUITE_LOGIN_URL}>
+              <Button className="font-body bg-primary hover:bg-primary/90">Suite Login</Button>
+            </a>
+          </div>
         </div>
       </header>
 
@@ -87,9 +93,19 @@ export default function Landing() {
             advocates who need reliable access to history.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <a href={SUITE_LOGIN_URL}>
+            <Link to="/login">
+              <Button size="lg" variant="outline" className="font-body px-8">
+                Login Directly
+              </Button>
+            </Link>
+            <Link to="/register">
               <Button size="lg" className="font-body px-8 bg-primary hover:bg-primary/90">
-                Sign In to the Archive
+                Create Local Account
+              </Button>
+            </Link>
+            <a href={SUITE_LOGIN_URL}>
+              <Button size="lg" variant="secondary" className="font-body px-8">
+                Continue with Suite
               </Button>
             </a>
             <a
