@@ -146,7 +146,7 @@ export default function Landing() {
             Sign in with your account credentials to upload documents, review the queue,
             and explore the full archive.
           </p>
-          <a href={SUITE_LOGIN_URL}>
+          <a href={suiteLoginUrl}>
             <Button size="lg" className="font-body px-10 bg-primary hover:bg-primary/90">
               Sign In
             </Button>
