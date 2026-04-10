@@ -2,6 +2,7 @@ import { Shield, Globe, Database, Upload, Search, BookOpen, Users, FileText } fr
 import { Button } from "@/components/ui/button";
 import { PROGRAM_DISPLAY_NAME } from "@/lib/programInfo";
 import { getSuiteLoginUrl } from "@/lib/suiteLogin";
+import { useAuth } from "@/context/AuthContext";
 
 const features = [
   {
@@ -43,7 +44,21 @@ const features = [
 ];
 
 export default function Landing() {
+  const { user, isLoading } = useAuth();
   const suiteLoginUrl = getSuiteLoginUrl("/");
+  const launchToken = new URLSearchParams(window.location.search).get("token") ?? "";
+
+  const enterProgramHref = user
+    ? "/"
+    : launchToken
+      ? `/launch?token=${encodeURIComponent(launchToken)}`
+      : suiteLoginUrl;
+
+  const enterProgramLabel = isLoading
+    ? "Checking Access..."
+    : user || launchToken
+      ? "Enter Program"
+      : "Continue With Suite";
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -63,8 +78,8 @@ export default function Landing() {
               </p>
             </div>
           </div>
-          <a href={suiteLoginUrl}>
-            <Button className="font-body bg-primary hover:bg-primary/90">Sign In Through Suite</Button>
+          <a href={enterProgramHref}>
+            <Button className="font-body bg-primary hover:bg-primary/90" disabled={isLoading}>{enterProgramLabel}</Button>
           </a>
         </div>
       </header>
@@ -87,9 +102,9 @@ export default function Landing() {
             advocates who need reliable access to history.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <a href={suiteLoginUrl}>
+            <a href={enterProgramHref}>
               <Button size="lg" className="font-body px-8 bg-primary hover:bg-primary/90">
-                Continue with Suite
+                {enterProgramLabel}
               </Button>
             </a>
             <a
@@ -143,12 +158,12 @@ export default function Landing() {
             Ready to access the archive?
           </h3>
           <p className="text-muted-foreground font-body mb-8">
-            Sign in with your account credentials to upload documents, review the queue,
-            and explore the full archive.
+            Enter directly if you launched from Nxt Lvl Suite, or continue through Suite
+            authentication to upload documents, review the queue, and explore the full archive.
           </p>
-          <a href={suiteLoginUrl}>
+          <a href={enterProgramHref}>
             <Button size="lg" className="font-body px-10 bg-primary hover:bg-primary/90">
-              Sign In
+              {enterProgramLabel}
             </Button>
           </a>
         </div>
