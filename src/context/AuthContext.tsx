@@ -1,14 +1,17 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import type { ReactNode } from "react";
-import type { AuthUser, LoginCredentials, LoginResult, AppInitState, MeResponse } from "@/auth/types";
+import type {
+  AuthUser,
+  AppInitState,
+  MeResponse,
+  PlatformLaunchConsumeResult,
+} from "@/auth/types";
 import { AuthErrorCode } from "@/auth/types";
+import { consumeLaunchToken } from "@/services/platformAuth";
+import { API_BASE } from "@/lib/apiBase";
 
-// When VITE_API_URL is not set, requests are made to relative paths (same origin).
-// This is correct for production deployments where the API is served from the same host,
-// and for local dev when Vite's proxy is configured. Set VITE_API_URL explicitly to
-// point at a different host (e.g. http://localhost:4000 during split dev).
-const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
-
+// VITE_API_BASE_URL should point to the shared platform backend API prefix,
+// for example: https://nxt-lvl-api.example.com/api.
 const TOKEN_KEY = "chronicle_auth_token";
 const USER_KEY = "chronicle_auth_user";
 
@@ -38,7 +41,7 @@ interface AuthContextValue {
   appInitState: AppInitState;
   /** True while the initial session hydration is in progress. */
   isLoading: boolean;
-  login: (credentials: LoginCredentials) => Promise<LoginResult>;
+  consumePlatformLaunch: (launchToken: string) => Promise<PlatformLaunchConsumeResult>;
   logout: () => void;
   /** Re-validate the session against GET /api/auth/me and refresh context. */
   refreshSession: () => Promise<void>;
@@ -62,6 +65,12 @@ function clearStorage() {
 function persistSession(token: string, user: AuthUser) {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(USER_KEY, JSON.stringify(user));
+  console.info("[chronicle-launch] session persisted", {
+    userId: user.id,
+    organizationId: user.organizationId,
+    programDomain: user.programDomain,
+    tokenStored: token.length > 0,
+  });
 }
 
 function orgFieldsFromUser(user: AuthUser | null) {
@@ -79,6 +88,22 @@ function initStateFromUser(user: AuthUser | null): AppInitState {
   return "ready";
 }
 
+function applySession(
+  sessionToken: string,
+  sessionUser: AuthUser,
+  sessionInitState: AppInitState | undefined,
+  setToken: (value: string | null) => void,
+  setUser: (value: AuthUser | null) => void,
+  setAppInitState: (value: AppInitState) => void,
+) {
+  const resolvedInitState: AppInitState = sessionInitState ?? initStateFromUser(sessionUser);
+  setToken(sessionToken);
+  setUser(sessionUser);
+  setAppInitState(resolvedInitState);
+  persistSession(sessionToken, sessionUser);
+  return resolvedInitState;
+}
+
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
@@ -92,10 +117,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /** Call GET /api/auth/me with a given token and update all state. */
   const hydrateFromServer = useCallback(async (storedToken: string): Promise<void> => {
     try {
-      const res = await fetch(`${BASE_URL}/api/auth/me`, {
+      console.info("[chronicle-launch] refresh session started", {
+        apiBase: API_BASE,
+      });
+      const res = await fetch(`${API_BASE}/auth/me`, {
         headers: { Authorization: `Bearer ${storedToken}` },
       });
       if (!res.ok) {
+        console.warn("[chronicle-launch] refresh session failed", {
+          status: res.status,
+        });
         // Token is invalid/expired — clear everything
         clearStorage();
         setToken(null);
@@ -110,10 +141,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(freshUser);
       setAppInitState(freshInitState);
       persistSession(storedToken, freshUser);
+      console.info("[chronicle-launch] refresh session success", {
+        userId: freshUser.id,
+        programDomain: freshUser.programDomain,
+      });
     } catch {
       // Network unavailable — keep existing state unchanged, the user will see
       // whatever was last persisted. The init state remains as resolved from the
       // cached user (set before this call) so routing still works offline.
+      console.warn("[chronicle-launch] refresh session skipped due to network error");
     }
   }, []);
 
@@ -184,64 +220,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await hydrateFromServer(token);
   }, [token, hydrateFromServer]);
 
-  const login = async (credentials: LoginCredentials): Promise<LoginResult> => {
-    try {
-      const res = await fetch(`${BASE_URL}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credentials),
-      });
-
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
+  const consumePlatformLaunch = useCallback(
+    async (launchToken: string): Promise<PlatformLaunchConsumeResult> => {
+      if (!launchToken.trim()) {
+        console.error("[chronicle-launch] consume aborted: token missing");
         return {
           success: false,
           error: {
-            code:
-              res.status === 401
-                ? AuthErrorCode.INVALID_CREDENTIALS
-                : AuthErrorCode.UNKNOWN,
-            message: data.error ?? "Login failed. Please try again.",
+            code: AuthErrorCode.UNAUTHORIZED,
+            message: "Launch token is required.",
           },
         };
       }
 
-      const data = (await res.json()) as {
-        token: string;
-        user: AuthUser;
-        appInitState?: AppInitState;
-      };
+      try {
+        const data = await consumeLaunchToken({ launchToken: launchToken.trim() });
+        const resolvedInitState = applySession(
+          data.token,
+          data.user,
+          data.appInitState,
+          setToken,
+          setUser,
+          setAppInitState,
+        );
+        console.info("[chronicle-launch] auth state after consume", {
+          userId: data.user.id,
+          organizationId: data.user.organizationId,
+          programDomain: data.user.programDomain,
+          appInitState: resolvedInitState,
+        });
+        return {
+          success: true,
+          user: data.user,
+          token: data.token,
+          appInitState: resolvedInitState,
+        };
+      } catch (error) {
+        clearStorage();
+        setToken(null);
+        setUser(null);
+        setAppInitState("unknown");
 
-      const resolvedInitState: AppInitState =
-        data.appInitState ?? initStateFromUser(data.user);
-
-      setToken(data.token);
-      setUser(data.user);
-      setAppInitState(resolvedInitState);
-      persistSession(data.token, data.user);
-
-      return {
-        success: true,
-        user: data.user,
-        token: data.token,
-        appInitState: resolvedInitState,
-      };
-    } catch {
-      return {
-        success: false,
-        error: {
-          code: AuthErrorCode.UNKNOWN,
-          message: "Unable to reach the server. Please try again.",
-        },
-      };
-    }
-  };
+        const message = error instanceof Error ? error.message : "Launch validation failed.";
+        console.error("[chronicle-launch] consume failed in auth context", {
+          reason: message,
+        });
+        return {
+          success: false,
+          error: {
+            code: AuthErrorCode.UNAUTHORIZED,
+            message,
+          },
+        };
+      }
+    },
+    [],
+  );
 
   const logout = () => {
     setUser(null);
     setToken(null);
     setAppInitState("unknown");
     clearStorage();
+    window.location.replace("/landing");
   };
 
   const derived = orgFieldsFromUser(user);
@@ -254,7 +295,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ...derived,
         appInitState,
         isLoading,
-        login,
+        consumePlatformLaunch,
         logout,
         refreshSession,
       }}

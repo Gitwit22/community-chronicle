@@ -1,7 +1,10 @@
-import { Link } from "react-router-dom";
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Shield, Globe, Database, Upload, Search, BookOpen, Users, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PROGRAM_DISPLAY_NAME } from "@/lib/programInfo";
+import { getSuiteLoginUrl } from "@/lib/suiteLogin";
+import { useAuth } from "@/context/AuthContext";
 
 const features = [
   {
@@ -43,6 +46,30 @@ const features = [
 ];
 
 export default function Landing() {
+  const navigate = useNavigate();
+  const { user, isLoading } = useAuth();
+  const suiteLoginUrl = getSuiteLoginUrl("/");
+  const launchToken = new URLSearchParams(window.location.search).get("token") ?? "";
+
+  // When a suite launch token is present and no local session exists,
+  // skip the landing page and go straight to the token exchange.
+  useEffect(() => {
+    if (isLoading || user || !launchToken) return;
+    navigate(`/launch?token=${encodeURIComponent(launchToken)}`, { replace: true });
+  }, [isLoading, launchToken, navigate, user]);
+
+  const enterProgramHref = user
+    ? "/"
+    : launchToken
+      ? `/launch?token=${encodeURIComponent(launchToken)}`
+      : suiteLoginUrl;
+
+  const enterProgramLabel = isLoading
+    ? "Checking Access..."
+    : user || launchToken
+      ? "Enter Program"
+      : "Continue With Suite";
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Nav */}
@@ -61,9 +88,9 @@ export default function Landing() {
               </p>
             </div>
           </div>
-          <Link to="/login">
-            <Button className="font-body bg-primary hover:bg-primary/90">Sign In</Button>
-          </Link>
+          <a href={enterProgramHref}>
+            <Button className="font-body bg-primary hover:bg-primary/90" disabled={isLoading}>{enterProgramLabel}</Button>
+          </a>
         </div>
       </header>
 
@@ -85,11 +112,11 @@ export default function Landing() {
             advocates who need reliable access to history.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link to="/login">
+            <a href={enterProgramHref}>
               <Button size="lg" className="font-body px-8 bg-primary hover:bg-primary/90">
-                Sign In to the Archive
+                {enterProgramLabel}
               </Button>
-            </Link>
+            </a>
             <a
               href="#features"
               className="text-sm font-body text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
@@ -141,14 +168,14 @@ export default function Landing() {
             Ready to access the archive?
           </h3>
           <p className="text-muted-foreground font-body mb-8">
-            Sign in with your account credentials to upload documents, review the queue,
-            and explore the full archive.
+            Enter directly if you launched from Nxt Lvl Suite, or continue through Suite
+            authentication to upload documents, review the queue, and explore the full archive.
           </p>
-          <Link to="/login">
+          <a href={enterProgramHref}>
             <Button size="lg" className="font-body px-10 bg-primary hover:bg-primary/90">
-              Sign In
+              {enterProgramLabel}
             </Button>
-          </Link>
+          </a>
         </div>
       </section>
 
