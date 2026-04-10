@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Shield, Globe, Database, Upload, Search, BookOpen, Users, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PROGRAM_DISPLAY_NAME } from "@/lib/programInfo";
@@ -44,9 +46,17 @@ const features = [
 ];
 
 export default function Landing() {
+  const navigate = useNavigate();
   const { user, isLoading } = useAuth();
   const suiteLoginUrl = getSuiteLoginUrl("/");
   const launchToken = new URLSearchParams(window.location.search).get("token") ?? "";
+
+  // When a suite launch token is present and no local session exists,
+  // skip the landing page and go straight to the token exchange.
+  useEffect(() => {
+    if (isLoading || user || !launchToken) return;
+    navigate(`/launch?token=${encodeURIComponent(launchToken)}`, { replace: true });
+  }, [isLoading, launchToken, navigate, user]);
 
   const enterProgramHref = user
     ? "/"
