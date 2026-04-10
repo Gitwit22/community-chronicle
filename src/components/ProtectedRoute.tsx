@@ -10,6 +10,11 @@ import { getSuiteLoginUrl, rememberPostAuthReturnPath } from "@/lib/suiteLogin";
 function SuiteLoginRedirect({ returnTo }: { returnTo: string }) {
   useEffect(() => {
     rememberPostAuthReturnPath(returnTo);
+    console.warn("[chronicle-launch] redirecting to suite login", {
+      reason: "unauthenticated_or_role_denied",
+      returnTo,
+      destination: getSuiteLoginUrl(returnTo),
+    });
     window.location.replace(getSuiteLoginUrl(returnTo));
   }, [returnTo]);
   return (
@@ -56,14 +61,27 @@ export function ProtectedRoute({
   }
 
   if (!user) {
+    console.warn("[chronicle-launch] guard redirect", {
+      reason: "no_user",
+      returnTo,
+    });
     return <SuiteLoginRedirect returnTo={returnTo} />;
   }
 
   if (appInitState === "not_initialized" || appInitState === "no_org") {
+    console.warn("[chronicle-launch] guard redirect", {
+      reason: "app_not_initialized_or_no_org",
+      appInitState,
+    });
     return <Navigate to="/org-setup" replace />;
   }
 
   if (!programDomain || programDomain !== PROGRAM_SYSTEM_NAME) {
+    console.warn("[chronicle-launch] guard redirect", {
+      reason: "program_domain_mismatch",
+      programDomain,
+      expected: PROGRAM_SYSTEM_NAME,
+    });
     return <Navigate to="/org-setup" replace />;
   }
 
@@ -71,6 +89,12 @@ export function ProtectedRoute({
     requiredRole &&
     (ROLE_LEVEL[role ?? ""] ?? 0) < (ROLE_LEVEL[requiredRole] ?? 0)
   ) {
+    console.warn("[chronicle-launch] guard redirect", {
+      reason: "role_insufficient",
+      role,
+      requiredRole,
+      returnTo,
+    });
     return <SuiteLoginRedirect returnTo={returnTo} />;
   }
 

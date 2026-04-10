@@ -2,8 +2,7 @@ import type {
   PlatformLaunchConsumeRequest,
   PlatformLaunchConsumeResponse,
 } from "@/auth/types";
-
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api";
+import { API_BASE } from "@/lib/apiBase";
 
 /**
  * Exchanges a platform launch token for a Chronicle-local session token.
@@ -12,6 +11,11 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/
 export async function consumeLaunchToken(
   payload: PlatformLaunchConsumeRequest,
 ): Promise<PlatformLaunchConsumeResponse> {
+  console.info("[chronicle-launch] consume started", {
+    hasLaunchToken: Boolean(payload.launchToken),
+    apiBase: API_BASE,
+  });
+
   const res = await fetch(`${API_BASE}/platform-auth/consume`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -26,12 +30,27 @@ export async function consumeLaunchToken(
   };
 
   if (!res.ok) {
+    console.error("[chronicle-launch] consume failed", {
+      status: res.status,
+      error: data.error ?? "Launch validation failed.",
+    });
     throw new Error(data.error ?? "Launch validation failed.");
   }
 
   if (!data.token || !data.user) {
+    console.error("[chronicle-launch] consume invalid payload", {
+      status: res.status,
+      hasToken: Boolean(data.token),
+      hasUser: Boolean(data.user),
+    });
     throw new Error("Invalid launch consume response.");
   }
+
+  console.info("[chronicle-launch] consume success", {
+    status: res.status,
+    userId: data.user.id,
+    programDomain: data.user.programDomain,
+  });
 
   return {
     token: data.token,
