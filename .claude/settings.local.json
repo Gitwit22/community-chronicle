@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la c:/Users/klaws/clawd/projects/nxt-lvl-hub/.env*)",
+      "Bash(git -C c:/Users/klaws/clawd/projects/nxt-lvl-hub ls-files --error-unmatch .env)"
+    ]
+  }
+}
