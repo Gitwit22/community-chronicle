@@ -30,15 +30,8 @@ const App = () => (
             <Route path="/org-setup" element={<OrgSetup />} />
             <Route path="/setup" element={<Navigate to="/org-setup" replace />} />
 
-            {/* Protected routes — require auth + org/init context */}
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <Index />
-                </ProtectedRoute>
-              }
-            />
+            {/* Auth temporarily removed — open access */}
+            <Route path="/" element={<Index />} />
             {/* Redirect old entry-point hits */}
             <Route path="/index" element={<Navigate to="/" replace />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
