@@ -168,21 +168,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.history.replaceState(null, "", cleanUrl);
 
       // Exchange the launch token for a Chronicle session via the platform API
-      fetch(`${BASE_URL}/api/platform-auth/consume`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ launchToken }),
-      })
-        .then(async (res) => {
-          if (!res.ok) throw new Error("Platform login failed");
-          return res.json() as Promise<{ token: string; user: AuthUser; appInitState?: AppInitState }>;
-        })
+      consumeLaunchToken({ launchToken })
         .then((data) => {
-          const resolvedInitState: AppInitState = data.appInitState ?? initStateFromUser(data.user);
-          setToken(data.token);
-          setUser(data.user);
-          setAppInitState(resolvedInitState);
-          persistSession(data.token, data.user);
+          applySession(data.token, data.user, data.appInitState, setToken, setUser, setAppInitState);
         })
         .catch(() => {
           // Token exchange failed — fall through to normal storage check below

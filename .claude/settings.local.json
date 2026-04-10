@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(ls -la c:/Users/klaws/clawd/projects/nxt-lvl-hub/.env*)",
-      "Bash(git -C c:/Users/klaws/clawd/projects/nxt-lvl-hub ls-files --error-unmatch .env)"
+      "Bash(git -C c:/Users/klaws/clawd/projects/nxt-lvl-hub ls-files --error-unmatch .env)",
+      "Bash(grep -n \"VITE_API_BASE_URL\\\\|API_BASE\" /c/Users/klaws/clawd/projects/community-chronicle/.env*)"
     ]
   }
 }
