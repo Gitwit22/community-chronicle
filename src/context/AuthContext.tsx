@@ -117,8 +117,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Restore session from localStorage on mount, then validate with server
+  // Restore session from localStorage on mount, then validate with server.
+  // Also handles platform launch tokens passed as ?token= URL params.
   useEffect(() => {
+    // Check for a platform launch token in the URL first
+    const params = new URLSearchParams(window.location.search);
+    const launchToken = params.get("token");
+
+    if (launchToken) {
+      // Remove the token from the URL immediately so it isn't leaked via history or bookmarks
+      params.delete("token");
+      const newSearch = params.toString();
+      const cleanUrl = window.location.pathname + (newSearch ? `?${newSearch}` : "") + window.location.hash;
+      window.history.replaceState(null, "", cleanUrl);
+
+      // Exchange the launch token for a Chronicle session via the platform API
+      fetch(`${BASE_URL}/api/platform-auth/consume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ launchToken }),
+      })
+        .then(async (res) => {
+          if (!res.ok) throw new Error("Platform login failed");
+          return res.json() as Promise<{ token: string; user: AuthUser; appInitState?: AppInitState }>;
+        })
+        .then((data) => {
+          const resolvedInitState: AppInitState = data.appInitState ?? initStateFromUser(data.user);
+          setToken(data.token);
+          setUser(data.user);
+          setAppInitState(resolvedInitState);
+          persistSession(data.token, data.user);
+        })
+        .catch(() => {
+          // Token exchange failed — fall through to normal storage check below
+        })
+        .finally(() => setIsLoading(false));
+      return;
+    }
+
     const storedToken = localStorage.getItem(TOKEN_KEY);
     const storedUserRaw = localStorage.getItem(USER_KEY);
 

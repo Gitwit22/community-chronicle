@@ -12,6 +12,7 @@ import { getRequestTenantScope, type TenantScope } from "./tenant.js";
 import { upload } from "./validators.js";
 import { logger } from "./logger.js";
 import { authRouter } from "./authRoutes.js";
+import { platformAuthRouter } from "./platformAuthRoutes.js";
 import { jobRouter } from "./jobRoutes.js";
 
 const app = express();
@@ -38,6 +39,7 @@ function buildFileUrl(relativePath: string): string {
 
 // Routers
 app.use(`${API_PREFIX}/auth`, authRouter);
+app.use(`${API_PREFIX}/platform-auth`, platformAuthRouter);
 app.use(`${API_PREFIX}/jobs`, jobRouter);
 
 function parseStringArray(value: unknown): string[] {

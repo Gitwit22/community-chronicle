@@ -21,6 +21,10 @@ export const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
 export const JWT_SECRET = process.env.JWT_SECRET || "changeme-dev-secret-replace-in-production";
 export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "8h";
 
+// Shared secret used to verify launch tokens issued by the platform hub
+export const PLATFORM_LAUNCH_TOKEN_SECRET =
+  process.env.PLATFORM_LAUNCH_TOKEN_SECRET || "dev-platform-launch-secret";
+
 // File validation
 export const MAX_FILE_SIZE_BYTES = Number(process.env.MAX_FILE_SIZE_BYTES || 50 * 1024 * 1024); // 50 MB
 
