@@ -1,7 +1,9 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Clock, FileText, Search as SearchIcon, Shield, Database, Upload, Globe, PenLine, LayoutDashboard, Eye, Settings, LogOut, User, Building2, ChevronDown } from "lucide-react";
+import { Clock, FileText, Search as SearchIcon, Shield, Database, Upload, Globe, PenLine, LayoutDashboard, Eye, Settings, LogOut, User, Building2, ChevronDown, ExternalLink } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useOrgContext } from "@/context/OrgContext";
+import { isSuiteAdmin } from "@/lib/permissions";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,9 +35,18 @@ const ROLE_LABEL: Record<string, string> = {
   uploader: "Uploader",
 };
 
+const ORG_ROLE_LABEL: Record<string, string> = {
+  owner: "Org Owner",
+  admin: "Org Admin",
+  manager: "Manager",
+  member: "Member",
+  viewer: "Viewer",
+};
+
 const Index = () => {
   const navigate = useNavigate();
   const { user, organizationId, organizationName, programDomain, role, logout } = useAuth();
+  const { membership, canManage } = useOrgContext();
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({ year: "", month: "", category: "", type: "", financialCategory: "", financialDocumentType: "", intakeSource: "", processingStatus: "" });
   const [selectedDoc, setSelectedDoc] = useState<ArchiveDocument | null>(null);
@@ -46,6 +57,18 @@ const Index = () => {
   const { data: years = [] } = useDocumentYears();
   const resolveReviewMutation = useResolveReview();
   const retryProcessingMutation = useRetryProcessing();
+
+  // Show settings tab if: org admin/owner, OR legacy app-level admin, OR suite admin
+  const showSettings = canManage || role === "admin" || isSuiteAdmin(user);
+
+  const handleOpenSuite = () => {
+    const suiteBase =
+      (import.meta.env.VITE_SUITE_URL as string | undefined) ??
+      "https://nltops.com";
+    const url = new URL("/", suiteBase);
+    if (user?.organizationId) url.searchParams.set("orgId", user.organizationId);
+    window.open(url.toString(), "_blank", "noopener,noreferrer");
+  };
 
   const handleLogout = () => {
     logout();
@@ -125,6 +148,16 @@ const Index = () => {
               <FileText className="h-4 w-4" />
               <span>{documentCount} documents</span>
             </div>
+            {/* Browse More Programs button — takes users to the suite with org context preserved */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 font-body hidden md:flex"
+              onClick={handleOpenSuite}
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Browse Programs
+            </Button>
             <Button
               onClick={() => setUploadOpen(true)}
               className="gap-2 font-body bg-primary hover:bg-primary/90"
@@ -153,7 +186,7 @@ const Index = () => {
                     <ChevronDown className="h-3 w-3 text-muted-foreground" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuContent align="end" className="w-64">
                   <DropdownMenuLabel className="font-normal">
                     <div className="flex flex-col gap-1">
                       <p className="text-sm font-medium font-body leading-none">
@@ -174,13 +207,33 @@ const Index = () => {
                       <Settings className="h-3 w-3 shrink-0" />
                       <span className="truncate">{programDomain || PROGRAM_SYSTEM_NAME}</span>
                     </div>
-                    <Badge variant="secondary" className="text-xs font-body h-5">
-                      {ROLE_LABEL[role ?? ""] ?? role}
-                    </Badge>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="secondary" className="text-xs font-body h-5">
+                        {ROLE_LABEL[role ?? ""] ?? role}
+                      </Badge>
+                      {membership && (
+                        <Badge variant="outline" className="text-xs font-body h-5 capitalize">
+                          {ORG_ROLE_LABEL[membership.role] ?? membership.role}
+                        </Badge>
+                      )}
+                      {isSuiteAdmin(user) && (
+                        <Badge className="text-xs font-body h-5 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                          Suite Admin
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                   <DropdownMenuSeparator />
+                  {/* Browse Programs (mobile) */}
                   <DropdownMenuItem
-                    className="gap-2 font-body text-sm cursor-pointer"
+                    className="gap-2 font-body text-sm cursor-pointer md:hidden"
+                    onSelect={handleOpenSuite}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Browse Programs
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="gap-2 font-body text-sm cursor-pointer text-destructive focus:text-destructive"
                     onSelect={handleLogout}
                   >
                     <LogOut className="h-4 w-4" />
@@ -249,10 +302,13 @@ const Index = () => {
               <Clock className="h-4 w-4" />
               Timeline
             </TabsTrigger>
-            <TabsTrigger value="settings" className="font-body gap-2">
-              <Settings className="h-4 w-4" />
-              Settings
-            </TabsTrigger>
+            {/* Settings is only shown to org admins/owners, legacy app admins, or suite admins */}
+            {showSettings && (
+              <TabsTrigger value="settings" className="font-body gap-2">
+                <Settings className="h-4 w-4" />
+                Settings
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="dashboard" className="space-y-6">
@@ -336,7 +392,16 @@ const Index = () => {
           </TabsContent>
 
           <TabsContent value="settings" className="space-y-6">
-            <StorageSettingsPanel />
+            {showSettings ? (
+              <StorageSettingsPanel />
+            ) : (
+              <div className="text-center py-16">
+                <Settings className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+                <p className="text-muted-foreground font-body">
+                  Settings are only available to organization admins.
+                </p>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </main>

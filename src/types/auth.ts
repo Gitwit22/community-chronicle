@@ -4,13 +4,26 @@
 
 export type UserRole = "uploader" | "reviewer" | "admin";
 
+/**
+ * Suite-wide platform role. Strictly separate from org-level roles.
+ * Org admin does NOT imply suite admin.
+ */
+export type PlatformRole = "suite_admin" | "user";
+
 /** Full authenticated user, including tenant context */
 export interface AuthUser {
   id: string;
   email: string;
   role: UserRole;
+  /**
+   * Suite-wide role. Controls access to platform admin features only.
+   * Defaults to "user" if absent.
+   */
+  platformRole?: PlatformRole;
   displayName: string;
   organizationId: string;
+  /** URL-safe org slug used in /org/:slug portal routes. */
+  organizationSlug?: string;
   programDomain: string;
   /** "platform" — authenticated via Suite handoff. "local" — direct Chronicle login. */
   identitySource?: "platform" | "local";

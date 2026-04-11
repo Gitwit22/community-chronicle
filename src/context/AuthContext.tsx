@@ -30,6 +30,11 @@ interface AuthContextValue {
   programDomain: string | null;
   role: AuthUser["role"] | null;
   /**
+   * Suite-wide platform role. "suite_admin" grants access to platform controls.
+   * Strictly separate from org-level roles.
+   */
+  platformRole: AuthUser["platformRole"];
+  /**
    * Describes whether the app has been initialized and whether the user
    * has a valid org assignment. Used by ProtectedRoute to decide routing.
    *
@@ -79,6 +84,7 @@ function orgFieldsFromUser(user: AuthUser | null) {
     organizationName: user?.organizationName ?? null,
     programDomain: user?.programDomain ?? null,
     role: user?.role ?? null,
+    platformRole: user?.platformRole,
   };
 }
 
