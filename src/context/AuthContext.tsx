@@ -119,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [appInitState, setAppInitState] = useState<AppInitState>("unknown");
   const [isLoading, setIsLoading] = useState(true);
+  const isExplicitLaunchRoute = typeof window !== "undefined" && window.location.pathname === "/launch";
 
   /** Call GET /api/auth/me with a given token and update all state. */
   const hydrateFromServer = useCallback(async (storedToken: string): Promise<void> => {
@@ -160,13 +161,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Restore session from localStorage on mount, then validate with server.
-  // Also handles platform launch tokens passed as ?token= URL params.
+  // Also handles platform launch tokens passed as ?token= URL params,
+  // except on /launch where the dedicated handoff page owns the flow.
   useEffect(() => {
     // Check for a platform launch token in the URL first
     const params = new URLSearchParams(window.location.search);
     const launchToken = params.get("token");
 
-    if (launchToken) {
+    if (launchToken && !isExplicitLaunchRoute) {
       // Remove the token from the URL immediately so it isn't leaked via history or bookmarks
       params.delete("token");
       const newSearch = params.toString();
@@ -207,7 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Then verify with the server in the background
     hydrateFromServer(storedToken).finally(() => setIsLoading(false));
-  }, [hydrateFromServer]);
+  }, [hydrateFromServer, isExplicitLaunchRoute]);
 
   const refreshSession = useCallback(async () => {
     if (!token) return;
