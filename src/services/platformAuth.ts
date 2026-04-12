@@ -3,6 +3,7 @@ import type {
   PlatformLaunchConsumeResponse,
 } from "@/auth/types";
 import { API_BASE } from "@/lib/apiBase";
+import { PROGRAM_SYSTEM_NAME } from "@/lib/programInfo";
 
 /**
  * Exchanges a platform launch token for a Chronicle-local session token.
@@ -18,7 +19,10 @@ export async function consumeLaunchToken(
 
   const res = await fetch(`${API_BASE}/platform-auth/consume`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-app-partition": PROGRAM_SYSTEM_NAME,
+    },
     body: JSON.stringify(payload),
   });
 

@@ -1,7 +1,6 @@
 import type { ArchiveDocument, DocumentFilters, DocumentIntakeInput, ReviewMetadata } from "@/types/document";
+import { API_BASE } from "@/lib/apiBase";
 import { getAuthHeaders } from "@/lib/tokenStorage";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {

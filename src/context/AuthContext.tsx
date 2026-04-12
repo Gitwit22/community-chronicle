@@ -9,6 +9,7 @@ import type {
 import { AuthErrorCode } from "@/auth/types";
 import { consumeLaunchToken } from "@/services/platformAuth";
 import { API_BASE } from "@/lib/apiBase";
+import { PROGRAM_SYSTEM_NAME } from "@/lib/programInfo";
 
 // VITE_API_BASE_URL should point to the shared platform backend API prefix,
 // for example: https://nxt-lvl-api.example.com/api.
@@ -128,7 +129,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         apiBase: API_BASE,
       });
       const res = await fetch(`${API_BASE}/auth/me`, {
-        headers: { Authorization: `Bearer ${storedToken}` },
+        headers: {
+          Authorization: `Bearer ${storedToken}`,
+          "x-app-partition": PROGRAM_SYSTEM_NAME,
+        },
       });
       if (!res.ok) {
         console.warn("[chronicle-launch] refresh session failed", {

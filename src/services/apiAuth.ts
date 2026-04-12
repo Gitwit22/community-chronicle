@@ -5,8 +5,8 @@ import type {
   RegisterPayload,
   RegisterResponse,
 } from "@/types/auth";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
+import { API_BASE } from "@/lib/apiBase";
+import { PROGRAM_SYSTEM_NAME } from "@/lib/programInfo";
 
 async function parseAuthResponse<T>(res: Response): Promise<T> {
   const payload = await res.json().catch(() => ({})) as Record<string, unknown>;
@@ -24,7 +24,10 @@ async function parseAuthResponse<T>(res: Response): Promise<T> {
 export async function apiLogin(credentials: LoginCredentials): Promise<LoginResponse> {
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-app-partition": PROGRAM_SYSTEM_NAME,
+    },
     body: JSON.stringify(credentials),
   });
   return parseAuthResponse<LoginResponse>(res);
@@ -33,7 +36,10 @@ export async function apiLogin(credentials: LoginCredentials): Promise<LoginResp
 /** GET /api/auth/me — validates existing token against backend, returns fresh user */
 export async function apiFetchCurrentUser(token: string): Promise<MeResponse> {
   const res = await fetch(`${API_BASE}/auth/me`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "x-app-partition": PROGRAM_SYSTEM_NAME,
+    },
   });
   return parseAuthResponse<MeResponse>(res);
 }
@@ -43,7 +49,10 @@ export async function apiRegister(
   payload: RegisterPayload,
   token?: string
 ): Promise<RegisterResponse> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "x-app-partition": PROGRAM_SYSTEM_NAME,
+  };
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`${API_BASE}/auth/register`, {
     method: "POST",
