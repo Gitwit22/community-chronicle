@@ -22,3 +22,7 @@ function getDefaultApiBaseUrl() {
 }
 
 export const API_BASE = ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? getDefaultApiBaseUrl()).replace(/\/$/, "");
+
+// Central platform API (nxt-lvl-api) — used for suite token exchange.
+// Separate from API_BASE which points to the CC-specific document backend.
+export const PLATFORM_API_BASE = ((import.meta.env.VITE_PLATFORM_API_URL as string | undefined) ?? "https://api.ntlops.com").replace(/\/$/, "");

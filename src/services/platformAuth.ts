@@ -2,7 +2,7 @@ import type {
   PlatformLaunchConsumeRequest,
   PlatformLaunchConsumeResponse,
 } from "@/auth/types";
-import { API_BASE } from "@/lib/apiBase";
+import { PLATFORM_API_BASE } from "@/lib/apiBase";
 import { PROGRAM_SYSTEM_NAME } from "@/lib/programInfo";
 
 /**
@@ -14,10 +14,10 @@ export async function consumeLaunchToken(
 ): Promise<PlatformLaunchConsumeResponse> {
   console.info("[chronicle-launch] consume started", {
     hasLaunchToken: Boolean(payload.launchToken),
-    apiBase: API_BASE,
+    platformApiBase: PLATFORM_API_BASE,
   });
 
-  const res = await fetch(`${API_BASE}/platform-auth/consume`, {
+  const res = await fetch(`${PLATFORM_API_BASE}/api/community-chronicle/platform-auth/consume`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
