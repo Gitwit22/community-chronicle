@@ -9,10 +9,9 @@ import { OrgAdminRoute } from "@/components/OrgAdminRoute";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Index from "./pages/Index.tsx";
 import Landing from "./pages/Landing.tsx";
-import Launch from "./pages/Launch.tsx";
+import Login from "./pages/Login.tsx";
 import OrgSetup from "./pages/OrgSetup.tsx";
 import NotFound from "./pages/NotFound.tsx";
-import SuiteAuthRedirect from "./pages/SuiteAuthRedirect.tsx";
 import { OrgPortal } from "./pages/OrgPortal.tsx";
 import { OrgSettingsLayout } from "./pages/OrgSettingsLayout.tsx";
 import { OrgProfileSettings } from "./pages/OrgProfileSettings.tsx";
@@ -34,9 +33,7 @@ const App = () => (
             <Routes>
               {/* Public routes */}
               <Route path="/landing" element={<Landing />} />
-              <Route path="/login" element={<SuiteAuthRedirect />} />
-              <Route path="/register" element={<SuiteAuthRedirect />} />
-              <Route path="/launch" element={<Launch />} />
+              <Route path="/login" element={<Login />} />
               <Route path="/org-setup" element={<OrgSetup />} />
               <Route path="/setup" element={<Navigate to="/org-setup" replace />} />
 
