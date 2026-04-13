@@ -30,6 +30,7 @@ import {
   Loader2,
 } from "lucide-react";
 import {
+  useUploadFile,
   useUploadMultipleFiles,
   useBulkUpload,
   useScannerImport,
@@ -49,12 +50,16 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const scannerInputRef = useRef<HTMLInputElement>(null);
 
+  const uploadSingle = useUploadFile();
   const uploadMultiple = useUploadMultipleFiles();
   const bulkUpload = useBulkUpload();
   const scannerImport = useScannerImport();
 
   const isUploading =
-    uploadMultiple.isPending || bulkUpload.isPending || scannerImport.isPending;
+    uploadSingle.isPending ||
+    uploadMultiple.isPending ||
+    bulkUpload.isPending ||
+    scannerImport.isPending;
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -101,7 +106,11 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
           break;
         case "files":
         default:
-          await uploadMultiple.mutateAsync({ files: selectedFiles });
+          if (selectedFiles.length === 1) {
+            await uploadSingle.mutateAsync({ file: selectedFiles[0] });
+          } else {
+            await uploadMultiple.mutateAsync({ files: selectedFiles });
+          }
           break;
       }
       toast.success(`${selectedFiles.length} document(s) uploaded and queued for processing`);
@@ -323,13 +332,19 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
         </div>
 
         {/* Upload Status */}
+        {uploadSingle.isSuccess && (
+          <div className="flex items-center gap-2 text-sm text-green-600 font-body">
+            <CheckCircle2 className="h-4 w-4" />
+            Upload completed successfully
+          </div>
+        )}
         {uploadMultiple.isSuccess && (
           <div className="flex items-center gap-2 text-sm text-green-600 font-body">
             <CheckCircle2 className="h-4 w-4" />
             Upload completed successfully
           </div>
         )}
-        {(uploadMultiple.isError || bulkUpload.isError || scannerImport.isError) && (
+        {(uploadSingle.isError || uploadMultiple.isError || bulkUpload.isError || scannerImport.isError) && (
           <div className="flex items-center gap-2 text-sm text-destructive font-body">
             <AlertCircle className="h-4 w-4" />
             Upload failed. Please try again.
