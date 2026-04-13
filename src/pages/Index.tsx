@@ -25,9 +25,10 @@ import Timeline from "@/components/Timeline";
 import ArchiveDashboard from "@/components/ArchiveDashboard";
 import ReviewQueuePanel from "@/components/ReviewQueuePanel";
 import StorageSettingsPanel from "@/components/StorageSettingsPanel";
-import { useDocuments, useDocumentYears, useBulkReprocess, useResolveReview, useRetryProcessing } from "@/hooks/useDocuments";
+import { useDeleteDocument, useDocuments, useDocumentYears, useBulkReprocess, useResolveReview, useRetryProcessing } from "@/hooks/useDocuments";
 import { PROGRAM_DISPLAY_NAME, PROGRAM_SYSTEM_NAME } from "@/lib/programInfo";
 import type { ArchiveDocument, ReviewMetadata } from "@/types/document";
+import { toast } from "sonner";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "Admin",
@@ -58,6 +59,7 @@ const Index = () => {
   const resolveReviewMutation = useResolveReview();
   const retryProcessingMutation = useRetryProcessing();
   const bulkReprocessMutation = useBulkReprocess();
+  const deleteDocumentMutation = useDeleteDocument();
 
   // Show settings tab if: org admin/owner, OR legacy app-level admin, OR suite admin
   const showSettings = canManage || role === "admin" || isSuiteAdmin(user);
@@ -124,6 +126,22 @@ const Index = () => {
 
     const typedResolution = resolution as ReviewMetadata["resolution"];
     resolveReviewMutation.mutate({ docId, resolution: typedResolution });
+  };
+
+  const handleDeleteDocument = (docId: string) => {
+    deleteDocumentMutation.mutate(docId, {
+      onSuccess: (deleted) => {
+        if (deleted) {
+          toast.success("Document deleted.");
+          setSelectedDoc(null);
+          return;
+        }
+        toast.error("Document was not found.");
+      },
+      onError: (error) => {
+        toast.error(error instanceof Error ? error.message : "Failed to delete document.");
+      },
+    });
   };
 
   return (
@@ -439,6 +457,9 @@ const Index = () => {
         document={selectedDoc}
         open={!!selectedDoc}
         onOpenChange={(open) => !open && setSelectedDoc(null)}
+        canDelete={role === "admin"}
+        isDeleting={deleteDocumentMutation.isPending}
+        onDelete={handleDeleteDocument}
       />
       <UploadDialog open={uploadOpen} onOpenChange={setUploadOpen} />
       <ManualEntryForm open={manualEntryOpen} onOpenChange={setManualEntryOpen} />

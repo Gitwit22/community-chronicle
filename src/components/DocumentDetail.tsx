@@ -1,4 +1,4 @@
-import { FileText, Calendar, User, Tag, Download, Sparkles, ExternalLink, Clock, Info, AlertTriangle, Shield, Copy } from "lucide-react";
+import { FileText, Calendar, User, Tag, Download, Sparkles, ExternalLink, Clock, Info, AlertTriangle, Shield, Copy, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,9 @@ interface DocumentDetailProps {
   document: ArchiveDocument | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  canDelete?: boolean;
+  isDeleting?: boolean;
+  onDelete?: (documentId: string) => void;
 }
 
 /** Format an intake source for display */
@@ -21,7 +24,7 @@ function formatIntakeSource(source: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-const DocumentDetail = ({ document, open, onOpenChange }: DocumentDetailProps) => {
+const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDeleting = false, onDelete }: DocumentDetailProps) => {
   if (!document) return null;
 
   const canOpenFile = Boolean(document.fileUrl);
@@ -38,6 +41,15 @@ const DocumentDetail = ({ document, open, onOpenChange }: DocumentDetailProps) =
     if (!ok) {
       toast.error("No original file is available for this record.");
     }
+  };
+
+  const handleDelete = () => {
+    if (!onDelete) return;
+    const confirmed = window.confirm(
+      `Delete \"${document.title}\"? This removes the document record and stored file.`
+    );
+    if (!confirmed) return;
+    onDelete(document.id);
   };
 
   return (
@@ -345,6 +357,17 @@ const DocumentDetail = ({ document, open, onOpenChange }: DocumentDetailProps) =
               <ExternalLink className="h-4 w-4" />
               Open Original
             </Button>
+            {canDelete && (
+              <Button
+                variant="destructive"
+                className="gap-2 font-body ml-auto"
+                onClick={handleDelete}
+                disabled={isDeleting}
+              >
+                <Trash2 className="h-4 w-4" />
+                {isDeleting ? "Deleting..." : "Delete"}
+              </Button>
+            )}
           </div>
         </div>
       </DialogContent>
