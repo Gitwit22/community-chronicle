@@ -1,4 +1,4 @@
-import { FileText, Download, Calendar, User, Tag, Sparkles, Copy, AlertTriangle } from "lucide-react";
+import { FileText, Download, Calendar, User, Tag, Sparkles, Copy, AlertTriangle, Trash2, CheckSquare, Square } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import ProcessingStatusBadge from "@/components/ProcessingStatusBadge";
 import type { ArchiveDocument } from "@/types/document";
@@ -8,9 +8,24 @@ import { downloadDocument } from "@/lib/documentActions";
 interface DocumentCardProps {
   document: ArchiveDocument;
   onClick?: () => void;
+  canSelect?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (documentId: string) => void;
+  canDelete?: boolean;
+  isDeleting?: boolean;
+  onDelete?: (documentId: string) => void;
 }
 
-const DocumentCard = ({ document, onClick }: DocumentCardProps) => {
+const DocumentCard = ({
+  document,
+  onClick,
+  canSelect = false,
+  isSelected = false,
+  onToggleSelect,
+  canDelete = false,
+  isDeleting = false,
+  onDelete,
+}: DocumentCardProps) => {
   const isDuplicate = document.duplicateCheck?.duplicateStatus === "possible_duplicate";
   const needsReview = document.review?.required && !document.review?.resolution;
 
@@ -102,17 +117,57 @@ const DocumentCard = ({ document, onClick }: DocumentCardProps) => {
           </div>
         </div>
 
-        <button
-          type="button"
-          className="flex-shrink-0 p-2 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors opacity-0 group-hover:opacity-100"
-          onClick={(e) => {
-            e.stopPropagation();
-            downloadDocument(document.fileUrl, document.originalFileName ?? document.title);
-          }}
-          aria-label="Download document"
-        >
-          <Download className="h-5 w-5" />
-        </button>
+        <div className="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {canSelect && (
+            <button
+              type="button"
+              className={`p-2 rounded-md transition-colors ${
+                isSelected
+                  ? "text-primary bg-primary/10"
+                  : "text-muted-foreground hover:text-primary hover:bg-primary/10"
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleSelect?.(document.id);
+              }}
+              aria-label={isSelected ? "Deselect document" : "Select document"}
+            >
+              {isSelected ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
+            </button>
+          )}
+
+          {canDelete && (
+            <button
+              type="button"
+              className="p-2 rounded-md text-destructive hover:bg-destructive/10 transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isDeleting || !onDelete) return;
+                const confirmed = window.confirm(
+                  `Delete \"${document.title}\"? This removes the document record and stored file.`
+                );
+                if (!confirmed) return;
+                onDelete(document.id);
+              }}
+              aria-label="Delete document"
+              disabled={isDeleting}
+            >
+              <Trash2 className="h-5 w-5" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            className="p-2 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              downloadDocument(document.fileUrl, document.originalFileName ?? document.title);
+            }}
+            aria-label="Download document"
+          >
+            <Download className="h-5 w-5" />
+          </button>
+        </div>
       </div>
     </div>
   );

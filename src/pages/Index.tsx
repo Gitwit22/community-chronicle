@@ -25,7 +25,7 @@ import Timeline from "@/components/Timeline";
 import ArchiveDashboard from "@/components/ArchiveDashboard";
 import ReviewQueuePanel from "@/components/ReviewQueuePanel";
 import StorageSettingsPanel from "@/components/StorageSettingsPanel";
-import { useDeleteDocument, useDocuments, useDocumentYears, useBulkReprocess, useResolveReview, useRetryProcessing } from "@/hooks/useDocuments";
+import { useBulkDeleteDocuments, useDeleteDocument, useDocuments, useDocumentYears, useBulkReprocess, useResolveReview, useRetryProcessing } from "@/hooks/useDocuments";
 import { PROGRAM_DISPLAY_NAME, PROGRAM_SYSTEM_NAME } from "@/lib/programInfo";
 import type { ArchiveDocument, ReviewMetadata } from "@/types/document";
 import { toast } from "sonner";
@@ -51,6 +51,7 @@ const Index = () => {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({ year: "", month: "", category: "", type: "", financialCategory: "", financialDocumentType: "", intakeSource: "", processingStatus: "" });
   const [selectedDoc, setSelectedDoc] = useState<ArchiveDocument | null>(null);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [manualEntryOpen, setManualEntryOpen] = useState(false);
 
@@ -59,6 +60,7 @@ const Index = () => {
   const resolveReviewMutation = useResolveReview();
   const retryProcessingMutation = useRetryProcessing();
   const bulkReprocessMutation = useBulkReprocess();
+  const bulkDeleteDocumentsMutation = useBulkDeleteDocuments();
   const deleteDocumentMutation = useDeleteDocument();
 
   // Show settings tab if: org admin/owner, OR legacy app-level admin, OR suite admin
@@ -133,6 +135,7 @@ const Index = () => {
       onSuccess: (deleted) => {
         if (deleted) {
           toast.success("Document deleted.");
+          setSelectedDocumentIds((prev) => prev.filter((id) => id !== docId));
           setSelectedDoc(null);
           return;
         }
@@ -142,6 +145,57 @@ const Index = () => {
         toast.error(error instanceof Error ? error.message : "Failed to delete document.");
       },
     });
+  };
+
+  const handleToggleSelectDocument = (docId: string) => {
+    setSelectedDocumentIds((prev) =>
+      prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId]
+    );
+  };
+
+  const handleBulkDeleteSelected = () => {
+    if (selectedDocumentIds.length === 0) {
+      toast.info("Select at least one document first.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete ${selectedDocumentIds.length} selected document${selectedDocumentIds.length !== 1 ? "s" : ""}? This removes records and stored files.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const idsToDelete = [...selectedDocumentIds];
+
+    bulkDeleteDocumentsMutation.mutate(idsToDelete, {
+      onSuccess: (result) => {
+        if (result.deletedCount > 0) {
+          toast.success(`Deleted ${result.deletedCount} document${result.deletedCount !== 1 ? "s" : ""}.`);
+        }
+        if (result.notFoundCount > 0) {
+          toast.info(`${result.notFoundCount} document${result.notFoundCount !== 1 ? "s were" : " was"} already missing.`);
+        }
+        if (result.failedCount > 0) {
+          toast.error(`${result.failedCount} document${result.failedCount !== 1 ? "s failed" : " failed"} to delete.`);
+        }
+
+        setSelectedDocumentIds([]);
+        setSelectedDoc((prev) => (prev && idsToDelete.includes(prev.id) ? null : prev));
+      },
+      onError: (error) => {
+        toast.error(error instanceof Error ? error.message : "Failed to delete selected documents.");
+      },
+    });
+  };
+
+  const handleSelectAllFiltered = () => {
+    setSelectedDocumentIds(filtered.map((doc) => doc.id));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedDocumentIds([]);
   };
 
   return (
@@ -353,20 +407,54 @@ const Index = () => {
                     {filtered.length} document{filtered.length !== 1 && "s"} found
                   </p>
                   {role === "admin" && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-2 font-body text-xs"
-                      disabled={bulkReprocessMutation.isPending}
-                      onClick={() => bulkReprocessMutation.mutate(undefined)}
-                    >
-                      <RefreshCw className={`h-3.5 w-3.5 ${bulkReprocessMutation.isPending ? "animate-spin" : ""}`} />
-                      {bulkReprocessMutation.isPending
-                        ? "Queueing..."
-                        : bulkReprocessMutation.isSuccess
-                        ? `Re-queued ${bulkReprocessMutation.data?.queued ?? 0}`
-                        : "Re-run OCR"}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 font-body text-xs"
+                        disabled={filtered.length === 0 || bulkDeleteDocumentsMutation.isPending}
+                        onClick={handleSelectAllFiltered}
+                      >
+                        Select All Filtered
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 font-body text-xs"
+                        disabled={selectedDocumentIds.length === 0 || bulkDeleteDocumentsMutation.isPending}
+                        onClick={handleClearSelection}
+                      >
+                        Clear Selection
+                      </Button>
+
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="gap-2 font-body text-xs"
+                        disabled={selectedDocumentIds.length === 0 || bulkDeleteDocumentsMutation.isPending}
+                        onClick={handleBulkDeleteSelected}
+                      >
+                        {bulkDeleteDocumentsMutation.isPending
+                          ? "Deleting..."
+                          : `Delete Selected${selectedDocumentIds.length > 0 ? ` (${selectedDocumentIds.length})` : ""}`}
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 font-body text-xs"
+                        disabled={bulkReprocessMutation.isPending}
+                        onClick={() => bulkReprocessMutation.mutate(undefined)}
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${bulkReprocessMutation.isPending ? "animate-spin" : ""}`} />
+                        {bulkReprocessMutation.isPending
+                          ? "Queueing..."
+                          : bulkReprocessMutation.isSuccess
+                          ? `Re-queued ${bulkReprocessMutation.data?.queued ?? 0}`
+                          : "Re-run OCR"}
+                      </Button>
+                    </div>
                   )}
                 </div>
                 <div className="grid gap-4">
@@ -375,6 +463,12 @@ const Index = () => {
                       key={doc.id}
                       document={doc}
                       onClick={() => setSelectedDoc(doc)}
+                      canSelect={role === "admin"}
+                      isSelected={selectedDocumentIds.includes(doc.id)}
+                      onToggleSelect={handleToggleSelectDocument}
+                      canDelete={role === "admin"}
+                      isDeleting={deleteDocumentMutation.isPending || bulkDeleteDocumentsMutation.isPending}
+                      onDelete={handleDeleteDocument}
                     />
                   ))}
                 </div>

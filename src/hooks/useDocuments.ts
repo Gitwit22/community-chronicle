@@ -215,6 +215,30 @@ export function useDeleteDocument() {
   });
 }
 
+/** Hook: Delete multiple documents */
+export function useBulkDeleteDocuments() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.allSettled(ids.map((id) => apiDeleteDocument(id)));
+
+      const deletedCount = results.filter((result) => result.status === "fulfilled" && result.value === true).length;
+      const notFoundCount = results.filter((result) => result.status === "fulfilled" && result.value === false).length;
+      const failedCount = results.filter((result) => result.status === "rejected").length;
+
+      return {
+        total: ids.length,
+        deletedCount,
+        notFoundCount,
+        failedCount,
+      };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+    },
+  });
+}
+
 /** Hook: Retry processing a single failed document */
 export function useRetryProcessing() {
   const queryClient = useQueryClient();
