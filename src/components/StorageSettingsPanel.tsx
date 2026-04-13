@@ -6,6 +6,7 @@ import {
   Database,
   FolderArchive,
   FolderCog,
+  FolderOpen,
   HardDrive,
   Network,
   Save,
@@ -114,6 +115,9 @@ const StorageSettingsPanel = () => {
     copySecondaryBackup: false,
   });
 
+  const [finalArchiveDirHandle, setFinalArchiveDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [processingDirHandle, setProcessingDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
+
   const [pathStrategy, setPathStrategy] = useState({
     byYear: true,
     bySource: false,
@@ -139,7 +143,27 @@ const StorageSettingsPanel = () => {
 
   const providerLabel = (provider: StorageProvider) => providerMeta[provider].label;
 
-  const testConnection = (destination: "final" | "processing") => {
+  const pickDirectory = async (destinationType: "final" | "processing", setDestination: React.Dispatch<React.SetStateAction<DestinationSettings>>) => {
+    if (!('showDirectoryPicker' in window)) {
+      toast.error("Folder picker is not supported in this browser. Please use Chrome or Edge.");
+      return;
+    }
+    try {
+      const handle = await window.showDirectoryPicker({ mode: "readwrite" });
+      if (destinationType === "final") {
+        setFinalArchiveDirHandle(handle);
+      } else {
+        setProcessingDirHandle(handle);
+      }
+      setDestination((prev) => ({ ...prev, localPath: handle.name }));
+      toast.success(`Folder selected: ${handle.name}`);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      toast.error("Failed to select folder.");
+    }
+  };
+
+  const testConnection = async (destination: "final" | "processing") => {
     const target = destination === "final" ? finalArchive : processingStorage;
     const targetLabel = destination === "final" ? "Final archive" : "Processing storage";
 
@@ -156,13 +180,30 @@ const StorageSettingsPanel = () => {
       return;
     }
 
-    const actionLabel =
-      target.provider === "local"
-        ? "write test"
-        : target.provider === "network"
-          ? "read/write test"
-          : "connection test";
+    // For local provider: use the File System Access API handle to perform a real write test
+    if (target.provider === "local") {
+      const handle = destination === "final" ? finalArchiveDirHandle : processingDirHandle;
+      if (!handle) {
+        toast.error("Please use the Browse button to select a folder first so we can verify write access.");
+        return;
+      }
+      try {
+        const testFileName = `.community-chronicle-write-test-${Date.now()}.tmp`;
+        const fileHandle = await handle.getFileHandle(testFileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write("Community Chronicle write test — safe to delete.");
+        await writable.close();
+        // Clean up the test file
+        await handle.removeEntry(testFileName);
+        toast.success(`${targetLabel} write test succeeded — folder is writable.`);
+      } catch {
+        toast.error(`${targetLabel} write test failed — check folder permissions.`);
+      }
+      return;
+    }
 
+    const actionLabel =
+      target.provider === "network" ? "read/write test" : "connection test";
     toast.success(`${targetLabel} ${providerLabel(target.provider)} ${actionLabel} succeeded.`);
   };
 
@@ -187,17 +228,29 @@ const StorageSettingsPanel = () => {
         <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor={`${destinationType}-local-path`}>Base folder path</Label>
-            <Input
-              id={`${destinationType}-local-path`}
-              value={destination.localPath}
-              onChange={(event) =>
-                setDestination((prev) => ({
-                  ...prev,
-                  localPath: event.target.value,
-                }))
-              }
-              placeholder="D:/community-chronicle/archive"
-            />
+            <div className="flex gap-2">
+              <Input
+                id={`${destinationType}-local-path`}
+                value={destination.localPath}
+                onChange={(event) =>
+                  setDestination((prev) => ({
+                    ...prev,
+                    localPath: event.target.value,
+                  }))
+                }
+                placeholder="D:/community-chronicle/archive"
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => pickDirectory(destinationType, setDestination)}
+                className="gap-2 shrink-0"
+              >
+                <FolderOpen className="h-4 w-4" />
+                Browse
+              </Button>
+            </div>
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div>

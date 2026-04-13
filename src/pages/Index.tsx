@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Clock, FileText, Search as SearchIcon, Shield, Database, Upload, Globe, PenLine, LayoutDashboard, Eye, Settings, LogOut, User, Building2, ChevronDown, ExternalLink } from "lucide-react";
+import { Clock, FileText, Search as SearchIcon, Shield, Database, Upload, Globe, PenLine, LayoutDashboard, Eye, Settings, LogOut, User, Building2, ChevronDown, ExternalLink, RefreshCw } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useOrgContext } from "@/context/OrgContext";
 import { isSuiteAdmin } from "@/lib/permissions";
@@ -25,7 +25,7 @@ import Timeline from "@/components/Timeline";
 import ArchiveDashboard from "@/components/ArchiveDashboard";
 import ReviewQueuePanel from "@/components/ReviewQueuePanel";
 import StorageSettingsPanel from "@/components/StorageSettingsPanel";
-import { useDocuments, useDocumentYears, useResolveReview, useRetryProcessing } from "@/hooks/useDocuments";
+import { useDocuments, useDocumentYears, useBulkReprocess, useResolveReview, useRetryProcessing } from "@/hooks/useDocuments";
 import { PROGRAM_DISPLAY_NAME, PROGRAM_SYSTEM_NAME } from "@/lib/programInfo";
 import type { ArchiveDocument, ReviewMetadata } from "@/types/document";
 
@@ -57,6 +57,7 @@ const Index = () => {
   const { data: years = [] } = useDocumentYears();
   const resolveReviewMutation = useResolveReview();
   const retryProcessingMutation = useRetryProcessing();
+  const bulkReprocessMutation = useBulkReprocess();
 
   // Show settings tab if: org admin/owner, OR legacy app-level admin, OR suite admin
   const showSettings = canManage || role === "admin" || isSuiteAdmin(user);
@@ -329,9 +330,27 @@ const Index = () => {
               </div>
             ) : filtered.length > 0 ? (
               <div className="space-y-4">
-                <p className="text-sm text-muted-foreground font-body">
-                  {filtered.length} document{filtered.length !== 1 && "s"} found
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground font-body">
+                    {filtered.length} document{filtered.length !== 1 && "s"} found
+                  </p>
+                  {role === "admin" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 font-body text-xs"
+                      disabled={bulkReprocessMutation.isPending}
+                      onClick={() => bulkReprocessMutation.mutate(undefined)}
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${bulkReprocessMutation.isPending ? "animate-spin" : ""}`} />
+                      {bulkReprocessMutation.isPending
+                        ? "Queueing..."
+                        : bulkReprocessMutation.isSuccess
+                        ? `Re-queued ${bulkReprocessMutation.data?.queued ?? 0}`
+                        : "Re-run OCR"}
+                    </Button>
+                  )}
+                </div>
                 <div className="grid gap-4">
                   {filtered.map((doc) => (
                     <DocumentCard

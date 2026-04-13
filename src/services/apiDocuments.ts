@@ -146,6 +146,16 @@ export async function apiRetryProcessing(id: string): Promise<ArchiveDocument> {
   return parseJsonResponse<ArchiveDocument>(response);
 }
 
+export async function apiBulkReprocess(ids?: string[]): Promise<{ queued: number; documentIds: string[] }> {
+  const response = await fetch(`${API_BASE}/documents/reprocess`, {
+    method: "POST",
+    headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(ids ? { ids } : {}),
+  });
+
+  return parseJsonResponse<{ queued: number; documentIds: string[] }>(response);
+}
+
 export async function apiGetReviewQueue(): Promise<ArchiveDocument[]> {
   const response = await fetch(`${API_BASE}/review-queue`, {
     headers: getAuthHeaders(),

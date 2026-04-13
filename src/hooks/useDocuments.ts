@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ArchiveDocument, DocumentFilters, DocumentIntakeInput, ReviewMetadata } from "@/types/document";
 import {
   apiCreateManualEntry,
+  apiBulkReprocess,
   apiDeleteDocument,
   apiGetAllDocuments,
   apiGetDocumentById,
@@ -214,11 +215,22 @@ export function useDeleteDocument() {
   });
 }
 
-/** Hook: Retry processing a failed document */
+/** Hook: Retry processing a single failed document */
 export function useRetryProcessing() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => apiRetryProcessing(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+    },
+  });
+}
+
+/** Hook: Re-queue multiple documents (or all eligible) for OCR/extraction */
+export function useBulkReprocess() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (ids?: string[]) => apiBulkReprocess(ids),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
