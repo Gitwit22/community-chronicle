@@ -113,7 +113,8 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
           }
           break;
       }
-      toast.success(`${selectedFiles.length} document(s) uploaded and queued for processing`);
+      const documentLabel = selectedFiles.length === 1 ? "document" : "documents";
+      toast.success(`${selectedFiles.length} ${documentLabel} uploaded and queued for processing`);
       setSelectedFiles([]);
       onOpenChange(false);
     } catch (error) {
@@ -332,13 +333,7 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
         </div>
 
         {/* Upload Status */}
-        {uploadSingle.isSuccess && (
-          <div className="flex items-center gap-2 text-sm text-green-600 font-body">
-            <CheckCircle2 className="h-4 w-4" />
-            Upload completed successfully
-          </div>
-        )}
-        {uploadMultiple.isSuccess && (
+        {(uploadSingle.isSuccess || uploadMultiple.isSuccess) && (
           <div className="flex items-center gap-2 text-sm text-green-600 font-body">
             <CheckCircle2 className="h-4 w-4" />
             Upload completed successfully
