@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   CheckCircle2,
@@ -24,27 +24,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-
-type StorageProvider = "local" | "network" | "r2";
-
-type DestinationSettings = {
-  provider: StorageProvider;
-  enabled: boolean;
-  saveProcessedDocs: boolean;
-  useAsFinalArchive: boolean;
-  localPath: string;
-  localCreateSubfolders: boolean;
-  networkPath: string;
-  networkUsername: string;
-  networkPassword: string;
-  networkReconnectInstructions: string;
-  r2BucketName: string;
-  r2Endpoint: string;
-  r2AccessKey: string;
-  r2SecretKey: string;
-  r2PublicUrl: string;
-  r2Prefix: string;
-};
+import {
+  fetchStorageCapabilities,
+  fetchStorageSettings,
+  saveStorageSettings,
+  testStorageConnection,
+} from "@/services/apiStorageSettings";
+import type {
+  DestinationSettings,
+  PathStrategy,
+  PostProcessingRules,
+  R2EnvCapabilities,
+  StorageProvider,
+} from "@/types/storageSettings";
 
 const providerMeta: Record<StorageProvider, { label: string; icon: typeof HardDrive; description: string }> = {
   local: {
@@ -57,10 +49,15 @@ const providerMeta: Record<StorageProvider, { label: string; icon: typeof HardDr
     icon: Network,
     description: "Store on UNC/mounted paths for team-shared access.",
   },
-  r2: {
-    label: "R2",
+  r2_env: {
+    label: "Cloudflare R2 (from environment)",
     icon: Cloud,
-    description: "Cloud object storage for durable offsite archive.",
+    description: "Uses server-managed bucket and credentials from backend environment variables.",
+  },
+  r2_manual: {
+    label: "Cloudflare R2 (manual custom)",
+    icon: Cloud,
+    description: "Use custom bucket endpoint and credentials entered in this form.",
   },
 };
 
@@ -79,34 +76,66 @@ const getDefaultDestination = (
   provider: StorageProvider,
   enabled: boolean,
   useAsFinalArchive: boolean,
-): DestinationSettings => ({
+  r2Env?: R2EnvCapabilities,
+): DestinationSettings => {
+  const envManaged = provider === "r2_env";
+  return {
   provider,
   enabled,
   saveProcessedDocs: false,
   useAsFinalArchive,
-  localPath: provider === "local" ? "D:/community-chronicle" : "",
+  localPath: "",
   localCreateSubfolders: true,
-  networkPath: provider === "network" ? "\\\\fileserver\\archive\\community-chronicle" : "",
+  networkPath: "",
   networkUsername: "",
   networkPassword: "",
   networkReconnectInstructions: "",
-  r2BucketName: provider === "r2" ? "community-chronicle" : "",
-  r2Endpoint: "",
+  r2BucketName: envManaged ? (r2Env?.bucketName ?? "") : "",
+  r2Endpoint: envManaged ? (r2Env?.endpoint ?? "") : "",
   r2AccessKey: "",
   r2SecretKey: "",
-  r2PublicUrl: "",
-  r2Prefix: "",
-});
+  r2PublicUrl: envManaged ? (r2Env?.publicUrl ?? "") : "",
+  r2Prefix: envManaged ? (r2Env?.defaultPrefix ?? "") : "",
+  envManaged,
+};
+};
+
+function normalizeDestinationForCapabilities(
+  destination: DestinationSettings,
+  r2Env: R2EnvCapabilities | null,
+): DestinationSettings {
+  if (destination.provider !== "r2_env") {
+    return {
+      ...destination,
+      envManaged: false,
+    };
+  }
+
+  return {
+    ...destination,
+    envManaged: true,
+    r2BucketName: r2Env?.bucketName ?? "",
+    r2Endpoint: r2Env?.endpoint ?? "",
+    r2PublicUrl: r2Env?.publicUrl ?? "",
+    r2Prefix: destination.r2Prefix || r2Env?.defaultPrefix || "",
+    r2AccessKey: "",
+    r2SecretKey: "",
+  };
+}
 
 const StorageSettingsPanel = () => {
   const [settingsTab, setSettingsTab] = useState("storage");
+  const [r2EnvCapabilities, setR2EnvCapabilities] = useState<R2EnvCapabilities | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
   const [finalArchive, setFinalArchive] = useState<DestinationSettings>(
     getDefaultDestination("local", true, true),
   );
   const [processingStorage, setProcessingStorage] = useState<DestinationSettings>(
     getDefaultDestination("network", false, false),
   );
-  const [postProcessingRules, setPostProcessingRules] = useState<Record<PostProcessingKey, boolean>>({
+  const [postProcessingRules, setPostProcessingRules] = useState<PostProcessingRules>({
     keepOriginalOnly: false,
     keepProcessedText: true,
     keepGeneratedReport: true,
@@ -118,7 +147,7 @@ const StorageSettingsPanel = () => {
   const [finalArchiveDirHandle, setFinalArchiveDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [processingDirHandle, setProcessingDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
 
-  const [pathStrategy, setPathStrategy] = useState({
+  const [pathStrategy, setPathStrategy] = useState<PathStrategy>({
     byYear: true,
     bySource: false,
     byDocType: true,
@@ -129,8 +158,9 @@ const StorageSettingsPanel = () => {
 
   const destinationPathExample = useMemo(() => {
     const segments: string[] = [];
+    const currentYear = String(new Date().getFullYear());
 
-    if (pathStrategy.byYear) segments.push("2026");
+    if (pathStrategy.byYear) segments.push(currentYear);
     if (pathStrategy.bySource) segments.push("ImportPortal");
     if (pathStrategy.byDocType) segments.push("Reports");
     if (pathStrategy.byTopic) segments.push("CivilRights");
@@ -142,6 +172,35 @@ const StorageSettingsPanel = () => {
   }, [pathStrategy]);
 
   const providerLabel = (provider: StorageProvider) => providerMeta[provider].label;
+
+  useEffect(() => {
+    const load = async () => {
+      setIsLoading(true);
+      try {
+        const payload = await fetchStorageSettings();
+        setR2EnvCapabilities(payload.capabilities.r2Env);
+        setFinalArchive(normalizeDestinationForCapabilities(payload.settings.finalArchive, payload.capabilities.r2Env));
+        setProcessingStorage(
+          normalizeDestinationForCapabilities(payload.settings.processingStorage, payload.capabilities.r2Env),
+        );
+        setPostProcessingRules(payload.settings.postProcessingRules);
+        setPathStrategy(payload.settings.pathStrategy);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to load storage settings";
+        toast.error(message);
+        try {
+          const capabilities = await fetchStorageCapabilities();
+          setR2EnvCapabilities(capabilities.r2Env);
+        } catch {
+          setR2EnvCapabilities(null);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void load();
+  }, []);
 
   const pickDirectory = async (destinationType: "final" | "processing", setDestination: React.Dispatch<React.SetStateAction<DestinationSettings>>) => {
     if (!('showDirectoryPicker' in window)) {
@@ -175,8 +234,13 @@ const StorageSettingsPanel = () => {
       toast.error("UNC or mounted path is required before read/write test.");
       return;
     }
-    if (target.provider === "r2" && (!target.r2BucketName.trim() || !target.r2Endpoint.trim())) {
+    if (target.provider === "r2_manual" && (!target.r2BucketName.trim() || !target.r2Endpoint.trim())) {
       toast.error("Bucket name and endpoint are required before testing R2 connection.");
+      return;
+    }
+
+    if (target.provider === "r2_env" && !r2EnvCapabilities?.available) {
+      toast.error("Cloudflare R2 environment configuration is not available on the backend.");
       return;
     }
 
@@ -202,13 +266,61 @@ const StorageSettingsPanel = () => {
       return;
     }
 
-    const actionLabel =
-      target.provider === "network" ? "read/write test" : "connection test";
+    if (target.provider === "r2_manual" || target.provider === "r2_env") {
+      try {
+        setIsTesting(true);
+        const result = await testStorageConnection(target);
+        if (result.success) {
+          toast.success(result.message);
+        } else {
+          toast.error(result.message);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "R2 connection test failed.";
+        toast.error(message);
+      } finally {
+        setIsTesting(false);
+      }
+      return;
+    }
+
+    const actionLabel = target.provider === "network" ? "read/write test" : "connection test";
     toast.success(`${targetLabel} ${providerLabel(target.provider)} ${actionLabel} succeeded.`);
   };
 
-  const saveSettings = () => {
-    toast.success("Storage settings saved. Upload -> Process -> Review -> Final storage flow is now configured.");
+  const saveSettings = async () => {
+    if (
+      (finalArchive.provider === "r2_env" || processingStorage.provider === "r2_env") &&
+      !r2EnvCapabilities?.available
+    ) {
+      toast.error("Cannot save env-backed R2 selection because backend env configuration is unavailable.");
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      const payload = await saveStorageSettings({
+        finalArchive,
+        processingStorage,
+        postProcessingRules,
+        pathStrategy,
+      });
+
+      setR2EnvCapabilities(payload.capabilities.r2Env);
+      setFinalArchive(normalizeDestinationForCapabilities(payload.settings.finalArchive, payload.capabilities.r2Env));
+      setProcessingStorage(
+        normalizeDestinationForCapabilities(payload.settings.processingStorage, payload.capabilities.r2Env),
+      );
+      setPostProcessingRules(payload.settings.postProcessingRules);
+      setPathStrategy(payload.settings.pathStrategy);
+
+      toast.success("Storage settings saved. Env-backed and manual storage modes are now configured.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save storage settings.";
+      toast.error(message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const toggleRule = (ruleKey: PostProcessingKey, checked: boolean) => {
@@ -338,6 +450,58 @@ const StorageSettingsPanel = () => {
       );
     }
 
+    if (destination.provider === "r2_env") {
+      return (
+        <div className="space-y-4">
+          <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+            <p className="font-medium text-foreground">Environment-managed connection</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Bucket and credentials are sourced from server environment variables and are not saved from this form.
+            </p>
+            {!r2EnvCapabilities?.available && (
+              <p className="text-xs text-destructive mt-2">
+                This option is unavailable because backend R2 environment variables are not fully configured.
+              </p>
+            )}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Bucket name (env)</Label>
+              <Input readOnly value={r2EnvCapabilities?.bucketName || "Not configured"} />
+            </div>
+            <div className="space-y-2">
+              <Label>Endpoint (env)</Label>
+              <Input readOnly value={r2EnvCapabilities?.endpoint || "Not configured"} />
+            </div>
+            <div className="space-y-2">
+              <Label>Public/base URL (env)</Label>
+              <Input readOnly value={r2EnvCapabilities?.publicUrl || "Not set"} />
+            </div>
+            <div className="space-y-2">
+              <Label>Default prefix (env)</Label>
+              <Input readOnly value={r2EnvCapabilities?.defaultPrefix || "None"} />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor={`${destinationType}-r2-prefix-override`}>Prefix/folder path override (optional)</Label>
+            <Input
+              id={`${destinationType}-r2-prefix-override`}
+              value={destination.r2Prefix}
+              onChange={(event) =>
+                setDestination((prev) => ({
+                  ...prev,
+                  r2Prefix: event.target.value,
+                }))
+              }
+              placeholder="archives/approved"
+            />
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2">
@@ -352,7 +516,7 @@ const StorageSettingsPanel = () => {
                   r2BucketName: event.target.value,
                 }))
               }
-              placeholder="community-chronicle"
+              placeholder="my-bucket"
             />
           </div>
           <div className="space-y-2">
@@ -366,7 +530,7 @@ const StorageSettingsPanel = () => {
                   r2Endpoint: event.target.value,
                 }))
               }
-              placeholder="https://<account-id>.r2.cloudflarestorage.com"
+              placeholder="https://abc123.r2.cloudflarestorage.com"
             />
           </div>
           <div className="space-y-2">
@@ -380,7 +544,7 @@ const StorageSettingsPanel = () => {
                   r2AccessKey: event.target.value,
                 }))
               }
-              placeholder="R2_ACCESS_KEY"
+              placeholder="Manual access key"
             />
           </div>
           <div className="space-y-2">
@@ -395,7 +559,7 @@ const StorageSettingsPanel = () => {
                   r2SecretKey: event.target.value,
                 }))
               }
-              placeholder="********"
+              placeholder="Manual secret key"
             />
           </div>
         </div>
@@ -411,7 +575,7 @@ const StorageSettingsPanel = () => {
                   r2PublicUrl: event.target.value,
                 }))
               }
-              placeholder="https://assets.community-chronicle.org"
+              placeholder="https://assets.example.org"
             />
           </div>
           <div className="space-y-2">
@@ -442,6 +606,8 @@ const StorageSettingsPanel = () => {
   ) => {
     const ActiveIcon = providerMeta[destination.provider].icon;
     const isFinal = destinationType === "final";
+
+    const providerOrder: StorageProvider[] = ["local", "network", "r2_env", "r2_manual"];
 
     return (
       <Card>
@@ -489,31 +655,55 @@ const StorageSettingsPanel = () => {
               <div className="space-y-3">
                 <Label className="font-medium">Default storage destination</Label>
                 <div className="grid gap-3 md:grid-cols-3">
-                  {(Object.keys(providerMeta) as StorageProvider[]).map((provider) => {
+                  {providerOrder.map((provider) => {
                     const ProviderIcon = providerMeta[provider].icon;
                     const selected = destination.provider === provider;
+                    const disabled = provider === "r2_env" && !r2EnvCapabilities?.available;
 
                     return (
                       <button
                         key={provider}
                         type="button"
+                        disabled={disabled}
                         onClick={() =>
+                          !disabled &&
                           setDestination((prev) => ({
                             ...prev,
                             provider,
+                            envManaged: provider === "r2_env",
+                            ...(provider === "r2_env"
+                              ? {
+                                  r2BucketName: r2EnvCapabilities?.bucketName || "",
+                                  r2Endpoint: r2EnvCapabilities?.endpoint || "",
+                                  r2PublicUrl: r2EnvCapabilities?.publicUrl || "",
+                                  r2Prefix: prev.r2Prefix || r2EnvCapabilities?.defaultPrefix || "",
+                                  r2AccessKey: "",
+                                  r2SecretKey: "",
+                                }
+                              : {}),
                           }))
                         }
                         className={`rounded-lg border p-3 text-left transition-colors ${
                           selected
                             ? "border-primary bg-primary/5"
                             : "border-border hover:border-primary/50"
-                        }`}
+                        } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+                        title={
+                          disabled
+                            ? "Backend environment config for Cloudflare R2 is not available."
+                            : undefined
+                        }
                       >
                         <div className="flex items-center gap-2 mb-1">
                           <ProviderIcon className="h-4 w-4 text-primary" />
                           <span className="text-sm font-semibold text-foreground">{providerMeta[provider].label}</span>
                         </div>
                         <p className="text-xs text-muted-foreground">{providerMeta[provider].description}</p>
+                        {provider === "r2_env" && !r2EnvCapabilities?.available && (
+                          <p className="text-[11px] text-destructive mt-2">
+                            Unavailable: backend env variables are not fully configured.
+                          </p>
+                        )}
                       </button>
                     );
                   })}
@@ -531,6 +721,7 @@ const StorageSettingsPanel = () => {
                     variant="outline"
                     onClick={() => testConnection(destinationType)}
                     className="gap-2"
+                    disabled={isTesting}
                   >
                     <Server className="h-4 w-4" />
                     {destination.provider === "local"
@@ -586,6 +777,14 @@ const StorageSettingsPanel = () => {
 
   return (
     <div className="space-y-6">
+      {isLoading && (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Loading storage settings...</p>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="border-primary/20 bg-gradient-to-br from-primary/5 via-background to-background">
         <CardHeader>
           <CardTitle className="font-display text-2xl">Settings</CardTitle>
@@ -833,9 +1032,9 @@ const StorageSettingsPanel = () => {
           <CheckCircle2 className="h-4 w-4" />
           Test active destination
         </Button>
-        <Button onClick={saveSettings} className="gap-2">
+        <Button onClick={saveSettings} className="gap-2" disabled={isSaving}>
           <Save className="h-4 w-4" />
-          Save settings
+          {isSaving ? "Saving..." : "Save settings"}
         </Button>
       </div>
 
