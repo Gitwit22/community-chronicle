@@ -38,11 +38,39 @@ export type PathStrategy = {
   basePathPrefix: string;
 };
 
+export type ProcessingRulesSettings = {
+  parserProvider: "llama_cloud" | "local" | "none";
+  ocrEnabled: boolean;
+  classificationEnabled: boolean;
+  keywordGenerationEnabled: boolean;
+  tagGenerationEnabled: boolean;
+  confidenceThresholdAutoApprove: number;
+  confidenceThresholdReviewRequired: number;
+  fallbackBehavior: "manual_review" | "reject" | "keep_original";
+  moveOriginalsToArchiveAfterProcessing: boolean;
+};
+
+export type RetentionPolicy = {
+  defaultRetentionPeriod: "1_year" | "2_years" | "5_years" | "7_years" | "10_years" | "forever";
+  expiredDocAction: "archive" | "delete" | "notify_only";
+  keepOriginals: boolean;
+  keepDerivatives: boolean;
+  legalHoldEnabled: boolean;
+};
+
+export type IntegrationSettings = {
+  llamaCloudEnabled: boolean;
+  llamaCloudApiKey: string;
+};
+
 export type StorageSettingsPayload = {
   finalArchive: DestinationSettings;
   processingStorage: DestinationSettings;
   postProcessingRules: PostProcessingRules;
   pathStrategy: PathStrategy;
+  processingRules: ProcessingRulesSettings;
+  retentionPolicy: RetentionPolicy;
+  integrations: IntegrationSettings;
 };
 
 export type R2EnvCapabilities = {

@@ -168,6 +168,18 @@ export interface ExtractedMetadata {
   language?: string;
 }
 
+/** Llama Cloud classification result (sub-object within ClassificationResult) */
+export interface LlamaCloudClassification {
+  provider: "llama-cloud";
+  status: "complete" | "failed" | "skipped";
+  documentType: string;
+  confidence: number | null;
+  reasoning: string | null;
+  jobId: string | null;
+  decision: "auto_accepted" | "needs_review" | "low_confidence" | null;
+  classifiedAt: string;
+}
+
 /** AI/rule-based classification result */
 export interface ClassificationResult {
   category: DocumentCategory;
@@ -176,6 +188,8 @@ export interface ClassificationResult {
   suggestedTags: string[];
   financialCategory?: FinancialCategory;
   financialDocumentType?: FinancialDocumentType;
+  /** Llama Cloud classification sub-result, present when AI classification ran */
+  llamaCloud?: LlamaCloudClassification;
 }
 
 /**
@@ -294,12 +308,16 @@ export interface AuditTrailEvent {
 /** Extraction metadata tracking */
 export interface ExtractionMetadata {
   status: "not_started" | "processing" | "complete" | "failed";
-  method?: "text" | "pdf" | "ocr" | "manual" | "fallback";
+  method?: "text" | "pdf" | "ocr" | "manual" | "fallback" | "llama_cloud" | "pdf_scanned" | "unsupported";
   confidence?: number;
   extractedAt?: string;
   warningMessages?: string[];
   errorMessage?: string;
   pageCount?: number;
+  /** Quality tier of the extraction attempt */
+  extractionQuality?: "full_extraction" | "partial_extraction" | "minimal_extraction" | "unsupported_format" | "no_extraction";
+  /** Number of words extracted */
+  contentLength?: number;
 }
 
 /** Duplicate detection metadata */

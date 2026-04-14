@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
   ArrowRight,
   CheckCircle2,
   Cloud,
   Database,
+  Eye,
+  EyeOff,
   FolderArchive,
   FolderCog,
   FolderOpen,
@@ -11,6 +14,8 @@ import {
   Network,
   Save,
   Server,
+  Shield,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -32,9 +37,12 @@ import {
 } from "@/services/apiStorageSettings";
 import type {
   DestinationSettings,
+  IntegrationSettings,
   PathStrategy,
   PostProcessingRules,
+  ProcessingRulesSettings,
   R2EnvCapabilities,
+  RetentionPolicy,
   StorageProvider,
 } from "@/types/storageSettings";
 
@@ -156,6 +164,34 @@ const StorageSettingsPanel = () => {
     basePathPrefix: "/",
   });
 
+  const [processingRules, setProcessingRules] = useState<ProcessingRulesSettings>({
+    parserProvider: "none",
+    ocrEnabled: false,
+    classificationEnabled: false,
+    keywordGenerationEnabled: false,
+    tagGenerationEnabled: false,
+    confidenceThresholdAutoApprove: 90,
+    confidenceThresholdReviewRequired: 60,
+    fallbackBehavior: "manual_review",
+    moveOriginalsToArchiveAfterProcessing: false,
+  });
+
+  const [retentionPolicy, setRetentionPolicy] = useState<RetentionPolicy>({
+    defaultRetentionPeriod: "forever",
+    expiredDocAction: "archive",
+    keepOriginals: true,
+    keepDerivatives: true,
+    legalHoldEnabled: false,
+  });
+
+  const [integrations, setIntegrations] = useState<IntegrationSettings>({
+    llamaCloudEnabled: false,
+    llamaCloudApiKey: "",
+  });
+  const [apiKeyEditing, setApiKeyEditing] = useState(false);
+  const [apiKeyVisible, setApiKeyVisible] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+
   const destinationPathExample = useMemo(() => {
     const segments: string[] = [];
     const currentYear = String(new Date().getFullYear());
@@ -185,6 +221,15 @@ const StorageSettingsPanel = () => {
         );
         setPostProcessingRules(payload.settings.postProcessingRules);
         setPathStrategy(payload.settings.pathStrategy);
+        if (payload.settings.processingRules) setProcessingRules(payload.settings.processingRules);
+        if (payload.settings.retentionPolicy) setRetentionPolicy(payload.settings.retentionPolicy);
+        if (payload.settings.integrations) {
+          const loaded = payload.settings.integrations;
+          setIntegrations(loaded);
+          // Don't pre-fill the editing input with the stored key
+          setApiKeyInput("");
+          setApiKeyEditing(false);
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to load storage settings";
         toast.error(message);
@@ -299,11 +344,19 @@ const StorageSettingsPanel = () => {
 
     try {
       setIsSaving(true);
+      // Only update the stored API key if the user actively typed a new one
+      const resolvedIntegrations: IntegrationSettings = apiKeyEditing && apiKeyInput.trim()
+        ? { ...integrations, llamaCloudApiKey: apiKeyInput.trim() }
+        : integrations;
+
       const payload = await saveStorageSettings({
         finalArchive,
         processingStorage,
         postProcessingRules,
         pathStrategy,
+        processingRules,
+        retentionPolicy,
+        integrations: resolvedIntegrations,
       });
 
       setR2EnvCapabilities(payload.capabilities.r2Env);
@@ -313,8 +366,15 @@ const StorageSettingsPanel = () => {
       );
       setPostProcessingRules(payload.settings.postProcessingRules);
       setPathStrategy(payload.settings.pathStrategy);
+      if (payload.settings.processingRules) setProcessingRules(payload.settings.processingRules);
+      if (payload.settings.retentionPolicy) setRetentionPolicy(payload.settings.retentionPolicy);
+      if (payload.settings.integrations) {
+        setIntegrations(payload.settings.integrations);
+        setApiKeyInput("");
+        setApiKeyEditing(false);
+      }
 
-      toast.success("Storage settings saved. Env-backed and manual storage modes are now configured.");
+      toast.success("Settings saved.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save storage settings.";
       toast.error(message);
@@ -836,29 +896,6 @@ const StorageSettingsPanel = () => {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="font-display text-xl">Post-processing rules</CardTitle>
-                  <CardDescription className="font-body text-sm">
-                    Control what artifacts are kept after OCR/reporting completes.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {postProcessingOptions.map((option) => (
-                    <div key={option.key} className="flex items-center justify-between rounded-lg border p-3">
-                      <Label htmlFor={option.key} className="text-sm font-medium cursor-pointer">
-                        {option.label}
-                      </Label>
-                      <Checkbox
-                        id={option.key}
-                        checked={postProcessingRules[option.key]}
-                        onCheckedChange={(checked) => toggleRule(option.key, checked === true)}
-                      />
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
                   <CardTitle className="font-display text-xl">Folder/path strategy</CardTitle>
                   <CardDescription className="font-body text-sm">
                     Decide how final storage paths are generated.
@@ -994,32 +1031,513 @@ const StorageSettingsPanel = () => {
               </Card>
             </TabsContent>
 
-            <TabsContent value="processing" className="mt-6">
+            <TabsContent value="processing" className="mt-6 space-y-6">
+              {/* Parser & Extraction */}
               <Card>
-                <CardContent className="pt-6">
-                  <p className="text-sm text-muted-foreground">
-                    Processing Rules is available from this page now via the Storage tab's Post-processing Rules section.
-                  </p>
+                <CardHeader>
+                  <CardTitle className="font-display text-xl">Parser &amp; Extraction</CardTitle>
+                  <CardDescription className="font-body text-sm">
+                    Choose how documents are parsed and what data is extracted during ingestion.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="space-y-3">
+                    <Label className="font-medium">Parser provider</Label>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {(
+                        [
+                          { value: "none", label: "No parsing", description: "Store originals only — no text extraction or OCR." },
+                          { value: "local", label: "Local parser", description: "Use the built-in server-side parser (PDF text extraction)." },
+                          { value: "llama_cloud", label: "Llama Cloud", description: "Send documents to Llama Cloud for advanced AI parsing and OCR." },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setProcessingRules((prev) => ({ ...prev, parserProvider: opt.value }))}
+                          className={`rounded-lg border p-3 text-left transition-colors ${
+                            processingRules.parserProvider === opt.value
+                              ? "border-primary bg-primary/5"
+                              : "border-border hover:border-primary/50"
+                          }`}
+                        >
+                          <p className="text-sm font-semibold text-foreground mb-1">{opt.label}</p>
+                          <p className="text-xs text-muted-foreground">{opt.description}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <p className="text-sm font-medium">OCR</p>
+                        <p className="text-xs text-muted-foreground">Extract text from scanned images and PDFs.</p>
+                      </div>
+                      <Switch
+                        checked={processingRules.ocrEnabled}
+                        onCheckedChange={(checked) =>
+                          setProcessingRules((prev) => ({ ...prev, ocrEnabled: checked }))
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <p className="text-sm font-medium">Classification</p>
+                        <p className="text-xs text-muted-foreground">Auto-classify document type and topic on ingest.</p>
+                      </div>
+                      <Switch
+                        checked={processingRules.classificationEnabled}
+                        onCheckedChange={(checked) =>
+                          setProcessingRules((prev) => ({ ...prev, classificationEnabled: checked }))
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <p className="text-sm font-medium">Keyword generation</p>
+                        <p className="text-xs text-muted-foreground">Generate searchable keywords from document content.</p>
+                      </div>
+                      <Switch
+                        checked={processingRules.keywordGenerationEnabled}
+                        onCheckedChange={(checked) =>
+                          setProcessingRules((prev) => ({ ...prev, keywordGenerationEnabled: checked }))
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <p className="text-sm font-medium">Tag generation</p>
+                        <p className="text-xs text-muted-foreground">Auto-suggest content tags for review.</p>
+                      </div>
+                      <Switch
+                        checked={processingRules.tagGenerationEnabled}
+                        onCheckedChange={(checked) =>
+                          setProcessingRules((prev) => ({ ...prev, tagGenerationEnabled: checked }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Quality thresholds */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="font-display text-xl">Quality &amp; Review Thresholds</CardTitle>
+                  <CardDescription className="font-body text-sm">
+                    Control when documents are auto-approved vs. routed to manual review.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="threshold-auto-approve">Auto-approve threshold (%)</Label>
+                      <Input
+                        id="threshold-auto-approve"
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={processingRules.confidenceThresholdAutoApprove}
+                        onChange={(e) =>
+                          setProcessingRules((prev) => ({
+                            ...prev,
+                            confidenceThresholdAutoApprove: Math.min(100, Math.max(0, Number(e.target.value))),
+                          }))
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Documents scoring at or above this confidence are approved automatically.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="threshold-review">Review-required threshold (%)</Label>
+                      <Input
+                        id="threshold-review"
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={processingRules.confidenceThresholdReviewRequired}
+                        onChange={(e) =>
+                          setProcessingRules((prev) => ({
+                            ...prev,
+                            confidenceThresholdReviewRequired: Math.min(100, Math.max(0, Number(e.target.value))),
+                          }))
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Documents scoring between this and the auto-approve threshold go to manual review.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
+                    Scores below the review threshold trigger the fallback behavior below.
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label className="font-medium">Fallback behavior (low confidence)</Label>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {(
+                        [
+                          { value: "manual_review", label: "Manual review", description: "Route to review queue — no automatic action." },
+                          { value: "keep_original", label: "Keep original", description: "Store the original file without processing output." },
+                          { value: "reject", label: "Reject", description: "Mark as failed and skip archiving." },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setProcessingRules((prev) => ({ ...prev, fallbackBehavior: opt.value }))}
+                          className={`rounded-lg border p-3 text-left transition-colors ${
+                            processingRules.fallbackBehavior === opt.value
+                              ? "border-primary bg-primary/5"
+                              : "border-border hover:border-primary/50"
+                          }`}
+                        >
+                          <p className="text-sm font-semibold text-foreground mb-1">{opt.label}</p>
+                          <p className="text-xs text-muted-foreground">{opt.description}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Post-processing artifacts */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="font-display text-xl">Post-processing Artifacts</CardTitle>
+                  <CardDescription className="font-body text-sm">
+                    Control which output files are retained after OCR/parsing completes.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {postProcessingOptions.map((option) => (
+                    <div key={option.key} className="flex items-center justify-between rounded-lg border p-3">
+                      <Label htmlFor={`proc-${option.key}`} className="text-sm font-medium cursor-pointer">
+                        {option.label}
+                      </Label>
+                      <Checkbox
+                        id={`proc-${option.key}`}
+                        checked={postProcessingRules[option.key]}
+                        onCheckedChange={(checked) => toggleRule(option.key, checked === true)}
+                      />
+                    </div>
+                  ))}
+                  <Separator />
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Move originals to archive after processing</p>
+                      <p className="text-xs text-muted-foreground">
+                        After OCR/parsing succeeds, move the source file from processing storage to final archive.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={processingRules.moveOriginalsToArchiveAfterProcessing}
+                      onCheckedChange={(checked) =>
+                        setProcessingRules((prev) => ({ ...prev, moveOriginalsToArchiveAfterProcessing: checked }))
+                      }
+                    />
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
 
-            <TabsContent value="retention" className="mt-6">
+            <TabsContent value="retention" className="mt-6 space-y-6">
               <Card>
-                <CardContent className="pt-6">
-                  <p className="text-sm text-muted-foreground">
-                    Document retention policies can be added next (e.g., raw upload TTL and failed-doc cleanup windows).
-                  </p>
+                <CardHeader>
+                  <CardTitle className="font-display text-xl">Default Retention Period</CardTitle>
+                  <CardDescription className="font-body text-sm">
+                    How long approved documents are kept before the expiration policy applies.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="retention-period">Retention period</Label>
+                    <Select
+                      value={retentionPolicy.defaultRetentionPeriod}
+                      onValueChange={(value) =>
+                        setRetentionPolicy((prev) => ({
+                          ...prev,
+                          defaultRetentionPeriod: value as RetentionPolicy["defaultRetentionPeriod"],
+                        }))
+                      }
+                    >
+                      <SelectTrigger id="retention-period">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1_year">1 year</SelectItem>
+                        <SelectItem value="2_years">2 years</SelectItem>
+                        <SelectItem value="5_years">5 years</SelectItem>
+                        <SelectItem value="7_years">7 years</SelectItem>
+                        <SelectItem value="10_years">10 years</SelectItem>
+                        <SelectItem value="forever">Forever (no expiration)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label className="font-medium">When a document expires</Label>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {(
+                        [
+                          { value: "archive", label: "Move to archive", description: "Retain in cold storage but remove from active view." },
+                          { value: "delete", label: "Permanently delete", description: "Remove the document and all derivatives permanently." },
+                          { value: "notify_only", label: "Notify only", description: "Flag for review — no automatic action taken." },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() =>
+                            setRetentionPolicy((prev) => ({ ...prev, expiredDocAction: opt.value }))
+                          }
+                          className={`rounded-lg border p-3 text-left transition-colors ${
+                            retentionPolicy.expiredDocAction === opt.value
+                              ? "border-primary bg-primary/5"
+                              : "border-border hover:border-primary/50"
+                          }`}
+                        >
+                          <p className="text-sm font-semibold text-foreground mb-1">{opt.label}</p>
+                          <p className="text-xs text-muted-foreground">{opt.description}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="font-display text-xl">File Retention Options</CardTitle>
+                  <CardDescription className="font-body text-sm">
+                    Choose which file versions are subject to the retention policy.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Keep original files</p>
+                      <p className="text-xs text-muted-foreground">
+                        Retain the source documents uploaded by contributors.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={retentionPolicy.keepOriginals}
+                      onCheckedChange={(checked) =>
+                        setRetentionPolicy((prev) => ({ ...prev, keepOriginals: checked }))
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Keep derivative files</p>
+                      <p className="text-xs text-muted-foreground">
+                        Retain OCR text, generated reports, and other processing outputs.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={retentionPolicy.keepDerivatives}
+                      onCheckedChange={(checked) =>
+                        setRetentionPolicy((prev) => ({ ...prev, keepDerivatives: checked }))
+                      }
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-amber-200 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20">
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                    <CardTitle className="font-display text-xl">Legal Hold</CardTitle>
+                  </div>
+                  <CardDescription className="font-body text-sm">
+                    Prevent any document from being deleted or archived regardless of retention rules.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center justify-between rounded-lg border border-amber-200 dark:border-amber-900/40 p-3">
+                    <div>
+                      <p className="text-sm font-medium">Enable legal hold</p>
+                      <p className="text-xs text-muted-foreground">
+                        When enabled, no document in this archive will be deleted or moved to cold storage
+                        until legal hold is removed.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={retentionPolicy.legalHoldEnabled}
+                      onCheckedChange={(checked) =>
+                        setRetentionPolicy((prev) => ({ ...prev, legalHoldEnabled: checked }))
+                      }
+                    />
+                  </div>
+                  {retentionPolicy.legalHoldEnabled && (
+                    <p className="mt-3 text-xs text-amber-700 dark:text-amber-400 font-medium">
+                      Legal hold is active — expiration and delete policies are suspended.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
 
-            <TabsContent value="integrations" className="mt-6">
+            <TabsContent value="integrations" className="mt-6 space-y-6">
+              {/* Llama Cloud */}
               <Card>
-                <CardContent className="pt-6">
-                  <p className="text-sm text-muted-foreground">
-                    Integrations is ready for future destinations, secondary backups, and compliance logging endpoints.
-                  </p>
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <CardTitle className="font-display text-xl">Llama Cloud</CardTitle>
+                      <CardDescription className="font-body text-sm mt-1">
+                        AI-powered document parsing, OCR, and extraction via the Llama Cloud API.
+                      </CardDescription>
+                    </div>
+                    <Badge
+                      variant={integrations.llamaCloudEnabled ? "default" : "secondary"}
+                      className="gap-1.5"
+                    >
+                      {integrations.llamaCloudEnabled ? (
+                        <>
+                          <CheckCircle2 className="h-3 w-3" /> Enabled
+                        </>
+                      ) : (
+                        "Disabled"
+                      )}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Enable Llama Cloud integration</p>
+                      <p className="text-xs text-muted-foreground">
+                        Required for AI parsing in Processing Rules. Needs a valid API key below.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={integrations.llamaCloudEnabled}
+                      onCheckedChange={(checked) =>
+                        setIntegrations((prev) => ({ ...prev, llamaCloudEnabled: checked }))
+                      }
+                    />
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="font-medium">API Key</Label>
+                      {integrations.llamaCloudApiKey && !apiKeyEditing && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            setApiKeyEditing(true);
+                            setApiKeyInput("");
+                          }}
+                        >
+                          Change key
+                        </Button>
+                      )}
+                    </div>
+
+                    {integrations.llamaCloudApiKey && !apiKeyEditing ? (
+                      <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+                        <span className="flex-1 font-mono text-sm text-foreground">
+                          {apiKeyVisible
+                            ? integrations.llamaCloudApiKey
+                            : `${"•".repeat(Math.max(0, integrations.llamaCloudApiKey.length - 4))}${integrations.llamaCloudApiKey.slice(-4)}`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setApiKeyVisible((v) => !v)}
+                          className="text-muted-foreground hover:text-foreground"
+                          aria-label={apiKeyVisible ? "Hide key" : "Show key"}
+                        >
+                          {apiKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                        <Badge variant="outline" className="gap-1 shrink-0">
+                          <CheckCircle2 className="h-3 w-3 text-green-500" /> Configured
+                        </Badge>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <Input
+                          type="password"
+                          placeholder="llx-••••••••••••••••••••••••••••••"
+                          value={apiKeyInput}
+                          onChange={(e) => {
+                            setApiKeyInput(e.target.value);
+                            setApiKeyEditing(true);
+                          }}
+                          autoComplete="off"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Your API key is stored server-side and never exposed in full after saving.
+                        </p>
+                        {apiKeyEditing && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              setApiKeyEditing(false);
+                              setApiKeyInput("");
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
+                    )}
+
+                    {integrations.llamaCloudEnabled && !integrations.llamaCloudApiKey && !apiKeyEditing && (
+                      <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/40 p-3 dark:border-amber-900/40 dark:bg-amber-950/20">
+                        <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <p className="text-xs text-amber-700 dark:text-amber-400">
+                          Integration is enabled but no API key is configured. Parsing jobs will fail.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Future integrations */}
+              <Card className="opacity-60">
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-muted-foreground" />
+                    <CardTitle className="font-display text-xl text-muted-foreground">Secondary Backup Destination</CardTitle>
+                  </div>
+                  <CardDescription className="font-body text-sm">
+                    Mirror approved documents to an additional storage provider. Coming soon.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Badge variant="outline">Not yet available</Badge>
+                </CardContent>
+              </Card>
+
+              <Card className="opacity-60">
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-muted-foreground" />
+                    <CardTitle className="font-display text-xl text-muted-foreground">Compliance Logging</CardTitle>
+                  </div>
+                  <CardDescription className="font-body text-sm">
+                    Send audit events to an external compliance or SIEM endpoint. Coming soon.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Badge variant="outline">Not yet available</Badge>
                 </CardContent>
               </Card>
             </TabsContent>

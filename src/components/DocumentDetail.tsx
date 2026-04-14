@@ -1,4 +1,4 @@
-import { FileText, Calendar, User, Tag, Download, Sparkles, ExternalLink, Clock, Info, AlertTriangle, Shield, Copy, Trash2 } from "lucide-react";
+import { FileText, Calendar, User, Tag, Download, Sparkles, ExternalLink, Clock, Info, AlertTriangle, Shield, Copy, Trash2, Brain } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -182,6 +182,95 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-red-600">
                   <AlertTriangle className="h-3 w-3" />
                   {document.extraction.errorMessage}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* AI Document Classification */}
+          {document.classificationResult && (
+            <div className="bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Brain className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                <h4 className="font-display text-sm font-semibold text-violet-800 dark:text-violet-200 uppercase tracking-wider">
+                  Document Classification
+                </h4>
+                <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-800 text-violet-600 dark:text-violet-300 font-body">
+                  {document.classificationResult.llamaCloud?.status === "complete"
+                    ? "AI · Llama Cloud"
+                    : "Rule-based"}
+                </span>
+              </div>
+
+              {/* Primary result row */}
+              {(() => {
+                const llama = document.classificationResult.llamaCloud;
+                const useLlama = llama?.status === "complete" && llama.documentType !== "uncategorized";
+                const displayType = useLlama ? llama!.documentType : document.type;
+                const displayConfidence = useLlama ? llama!.confidence : document.classificationResult.confidence;
+                const confidenceClass =
+                  (displayConfidence ?? 0) >= 0.85
+                    ? "text-green-600 dark:text-green-400"
+                    : (displayConfidence ?? 0) >= 0.6
+                      ? "text-yellow-600 dark:text-yellow-400"
+                      : "text-red-600 dark:text-red-400";
+
+                return (
+                  <div className="grid grid-cols-2 gap-2 text-sm font-body mb-2">
+                    <div className="text-muted-foreground">
+                      Document Type:{" "}
+                      <span className="text-foreground font-medium capitalize">
+                        {displayType?.replace(/_/g, " ") ?? "Unknown"}
+                      </span>
+                    </div>
+                    {displayConfidence != null && (
+                      <div className="text-muted-foreground">
+                        Confidence:{" "}
+                        <span className={`font-medium ${confidenceClass}`}>
+                          {(displayConfidence * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                    )}
+                    {llama && (
+                      <div className="text-muted-foreground">
+                        Status:{" "}
+                        <span className="text-foreground font-medium capitalize">{llama.status}</span>
+                      </div>
+                    )}
+                    {llama?.decision && (
+                      <div className="text-muted-foreground">
+                        Decision:{" "}
+                        <span className={`font-medium capitalize ${llama.decision === "auto_accepted" ? "text-green-600 dark:text-green-400" : llama.decision === "needs_review" ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}`}>
+                          {llama.decision.replace(/_/g, " ")}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Llama Cloud reasoning — expandable */}
+              {document.classificationResult.llamaCloud?.reasoning && (
+                <details className="mt-1">
+                  <summary className="text-xs text-violet-600 dark:text-violet-400 cursor-pointer hover:underline font-body select-none">
+                    View AI reasoning
+                  </summary>
+                  <p className="mt-1.5 text-xs text-muted-foreground font-body leading-relaxed bg-violet-50/50 dark:bg-violet-900/10 border border-violet-100 dark:border-violet-800 rounded p-2">
+                    {document.classificationResult.llamaCloud.reasoning}
+                  </p>
+                </details>
+              )}
+
+              {/* Skipped / failed notice */}
+              {document.classificationResult.llamaCloud?.status === "skipped" && (
+                <p className="text-xs text-muted-foreground font-body mt-1">
+                  AI classification was skipped for this file type.
+                </p>
+              )}
+              {document.classificationResult.llamaCloud?.status === "failed" && (
+                <div className="flex items-center gap-1.5 text-xs text-red-600 mt-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  AI classification failed — using rule-based type
                 </div>
               )}
             </div>
