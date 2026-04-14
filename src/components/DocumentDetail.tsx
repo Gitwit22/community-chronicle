@@ -29,15 +29,15 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
 
   const canOpenFile = Boolean(document.fileUrl);
 
-  const handleDownload = () => {
-    const ok = downloadDocument(document.fileUrl, document.originalFileName ?? document.title);
+  const handleDownload = async () => {
+    const ok = await downloadDocument(document.fileUrl, document.originalFileName ?? document.title);
     if (!ok) {
       toast.error("No file is available to download for this record.");
     }
   };
 
-  const handleOpenOriginal = () => {
-    const ok = openOriginalDocument(document.fileUrl);
+  const handleOpenOriginal = async () => {
+    const ok = await openOriginalDocument(document.fileUrl);
     if (!ok) {
       toast.error("No original file is available for this record.");
     }
@@ -309,7 +309,7 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
               {document.ocrStatus !== "not_needed" && (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Info className="h-3.5 w-3.5" />
-                  OCR: {document.ocrStatus}
+                  Text Processing: {document.ocrStatus}
                 </div>
               )}
             </div>
