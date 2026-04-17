@@ -51,6 +51,43 @@ function triggerAnchorDownload(href: string, filename?: string) {
   anchor.remove();
 }
 
+function withDisposition(url: string, disposition: "inline" | "attachment"): string {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    parsed.searchParams.set("disposition", disposition);
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+function toResolveUrl(downloadUrl: string, disposition: "inline" | "attachment"): string {
+  try {
+    const parsed = new URL(downloadUrl, window.location.origin);
+    parsed.pathname = parsed.pathname.replace(/\/download$/, "/resolve");
+    parsed.search = "";
+    parsed.searchParams.set("disposition", disposition);
+    return parsed.toString();
+  } catch {
+    return downloadUrl;
+  }
+}
+
+async function resolveProtectedUrl(fileUrl: string, disposition: "inline" | "attachment"): Promise<string | null> {
+  try {
+    const response = await fetch(toResolveUrl(fileUrl, disposition), {
+      method: "GET",
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) return null;
+    const data = (await response.json()) as { url?: string };
+    return typeof data.url === "string" ? data.url : null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchProtectedDownload(fileUrl: string): Promise<{ redirectedUrl?: string; blob?: Blob } | null> {
   try {
     const response = await fetch(fileUrl, {
@@ -87,7 +124,13 @@ export async function downloadDocument(fileUrl?: string, filename?: string): Pro
     return true;
   }
 
-  const result = await fetchProtectedDownload(resolved);
+  const signedUrl = await resolveProtectedUrl(resolved, "attachment");
+  if (signedUrl) {
+    triggerAnchorDownload(signedUrl, filename);
+    return true;
+  }
+
+  const result = await fetchProtectedDownload(withDisposition(resolved, "attachment"));
   if (!result) return false;
 
   if (result.redirectedUrl) {
@@ -107,23 +150,53 @@ export async function openOriginalDocument(fileUrl?: string): Promise<boolean> {
   const resolved = resolveDocumentUrl(fileUrl);
   if (!resolved) return false;
 
+  const popup = window.open("", "_blank", "noopener,noreferrer");
+
   if (!isProtectedDownloadUrl(resolved)) {
-    window.open(resolved, "_blank", "noopener,noreferrer");
+    if (popup) {
+      popup.location.href = resolved;
+    } else {
+      window.open(resolved, "_blank", "noopener,noreferrer");
+    }
     return true;
   }
 
-  const result = await fetchProtectedDownload(resolved);
-  if (!result) return false;
+  const signedUrl = await resolveProtectedUrl(resolved, "inline");
+  if (signedUrl) {
+    if (popup) {
+      popup.location.href = signedUrl;
+    } else {
+      window.open(signedUrl, "_blank", "noopener,noreferrer");
+    }
+    return true;
+  }
+
+  const result = await fetchProtectedDownload(withDisposition(resolved, "inline"));
+  if (!result) {
+    popup?.close();
+    return false;
+  }
 
   if (result.redirectedUrl) {
-    window.open(result.redirectedUrl, "_blank", "noopener,noreferrer");
+    if (popup) {
+      popup.location.href = result.redirectedUrl;
+    } else {
+      window.open(result.redirectedUrl, "_blank", "noopener,noreferrer");
+    }
     return true;
   }
 
-  if (!result.blob) return false;
+  if (!result.blob) {
+    popup?.close();
+    return false;
+  }
 
   const objectUrl = URL.createObjectURL(result.blob);
-  window.open(objectUrl, "_blank", "noopener,noreferrer");
+  if (popup) {
+    popup.location.href = objectUrl;
+  } else {
+    window.open(objectUrl, "_blank", "noopener,noreferrer");
+  }
   setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
   return true;
 }

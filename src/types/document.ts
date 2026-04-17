@@ -180,16 +180,34 @@ export interface LlamaCloudClassification {
   classifiedAt: string;
 }
 
+/** Core API classification result (provider-agnostic shape from backend) */
+export interface CoreApiClassification {
+  provider: "core-api";
+  status: "complete" | "failed" | "skipped";
+  documentType: string;
+  confidence: number | null;
+  reasoning: string | null;
+  jobId: string | null;
+  decision: "auto_accepted" | "needs_review" | "low_confidence" | null;
+  classifiedAt: string;
+}
+
 /** AI/rule-based classification result */
 export interface ClassificationResult {
   category: DocumentCategory;
   confidence: number;
   method: "rule_based" | "ai_assisted" | "manual";
+  provider?: "core-api" | "llama-cloud" | "rule-based";
+  decision?: "auto_accepted" | "needs_review" | "low_confidence" | null;
+  documentType?: string;
+  reasoning?: string | null;
   suggestedTags: string[];
   financialCategory?: FinancialCategory;
   financialDocumentType?: FinancialDocumentType;
   /** Llama Cloud classification sub-result, present when AI classification ran */
   llamaCloud?: LlamaCloudClassification;
+  /** Core API classification sub-result, present in new processing path */
+  coreApi?: CoreApiClassification;
 }
 
 /**
@@ -308,7 +326,7 @@ export interface AuditTrailEvent {
 /** Extraction metadata tracking */
 export interface ExtractionMetadata {
   status: "not_started" | "processing" | "complete" | "failed";
-  method?: "text" | "pdf" | "ocr" | "manual" | "fallback" | "llama_cloud" | "pdf_scanned" | "unsupported";
+  method?: "text" | "pdf" | "ocr" | "manual" | "fallback" | "llama_cloud" | "core_api" | "pdf_scanned" | "unsupported";
   confidence?: number;
   extractedAt?: string;
   warningMessages?: string[];
@@ -398,4 +416,41 @@ export interface PaginatedResult<T> {
   page: number;
   pageSize: number;
   totalPages: number;
+}
+
+// ---------------------------------------------------------------------------
+// Unified display status
+//
+// Both processingStatus and lifecycle status (doc.status) carry meaningful
+// state, but they use overlapping vocabulary which causes confusion in filters,
+// KPIs, and dashboards.
+//
+// Rules (in priority order):
+//   1. "archived"       — lifecycle status === "archived" (final resting state)
+//   2. "review_required"— lifecycle "review_required" OR processingStatus "needs_review"
+//   3. "failed"         — either field is "failed"
+//   4. "processing"     — processingStatus is "queued" | "processing" or lifecycle is
+//                         "queued" | "extracting"
+//   5. "done"           — processingStatus "processed" and not archived/review
+//   6. "intake"         — everything else (uploaded, imported, intake_received, etc.)
+// ---------------------------------------------------------------------------
+
+export type DocumentDisplayStatus =
+  | "archived"
+  | "review_required"
+  | "failed"
+  | "processing"
+  | "done"
+  | "intake";
+
+export function getDocumentDisplayStatus(doc: Pick<ArchiveDocument, "processingStatus" | "status">): DocumentDisplayStatus {
+  const ps = doc.processingStatus;
+  const ls = doc.status;
+
+  if (ls === "archived") return "archived";
+  if (ls === "review_required" || ps === "needs_review") return "review_required";
+  if (ps === "failed" || ls === "failed") return "failed";
+  if (ps === "queued" || ps === "processing" || ls === "queued" || ls === "extracting") return "processing";
+  if (ps === "processed") return "done";
+  return "intake";
 }

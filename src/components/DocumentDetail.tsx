@@ -196,18 +196,23 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
                   Document Classification
                 </h4>
                 <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-800 text-violet-600 dark:text-violet-300 font-body">
-                  {document.classificationResult.llamaCloud?.status === "complete"
-                    ? "AI · Llama Cloud"
+                  {(document.classificationResult.coreApi?.status === "complete" ||
+                    document.classificationResult.llamaCloud?.status === "complete")
+                    ? "AI · Core API"
                     : "Rule-based"}
                 </span>
               </div>
 
               {/* Primary result row */}
               {(() => {
-                const llama = document.classificationResult.llamaCloud;
-                const useLlama = llama?.status === "complete" && llama.documentType !== "uncategorized";
-                const displayType = useLlama ? llama!.documentType : document.type;
-                const displayConfidence = useLlama ? llama!.confidence : document.classificationResult.confidence;
+                const ai = document.classificationResult.coreApi ?? document.classificationResult.llamaCloud;
+                const useAi = ai?.status === "complete" && ai.documentType !== "uncategorized";
+                const displayType = useAi
+                  ? ai.documentType
+                  : document.classificationResult.documentType ?? document.type;
+                const displayConfidence = useAi
+                  ? ai.confidence
+                  : document.classificationResult.confidence;
                 const confidenceClass =
                   (displayConfidence ?? 0) >= 0.85
                     ? "text-green-600 dark:text-green-400"
@@ -231,17 +236,17 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
                         </span>
                       </div>
                     )}
-                    {llama && (
+                    {ai && (
                       <div className="text-muted-foreground">
                         Status:{" "}
-                        <span className="text-foreground font-medium capitalize">{llama.status}</span>
+                        <span className="text-foreground font-medium capitalize">{ai.status}</span>
                       </div>
                     )}
-                    {llama?.decision && (
+                    {(ai?.decision ?? document.classificationResult.decision) && (
                       <div className="text-muted-foreground">
                         Decision:{" "}
-                        <span className={`font-medium capitalize ${llama.decision === "auto_accepted" ? "text-green-600 dark:text-green-400" : llama.decision === "needs_review" ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}`}>
-                          {llama.decision.replace(/_/g, " ")}
+                        <span className={`font-medium capitalize ${(ai?.decision ?? document.classificationResult.decision) === "auto_accepted" ? "text-green-600 dark:text-green-400" : (ai?.decision ?? document.classificationResult.decision) === "needs_review" ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}`}>
+                          {(ai?.decision ?? document.classificationResult.decision)?.replace(/_/g, " ")}
                         </span>
                       </div>
                     )}
@@ -250,24 +255,28 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
               })()}
 
               {/* Llama Cloud reasoning — expandable */}
-              {document.classificationResult.llamaCloud?.reasoning && (
+              {(document.classificationResult.coreApi?.reasoning ||
+                document.classificationResult.llamaCloud?.reasoning ||
+                document.classificationResult.reasoning) && (
                 <details className="mt-1">
                   <summary className="text-xs text-violet-600 dark:text-violet-400 cursor-pointer hover:underline font-body select-none">
                     View AI reasoning
                   </summary>
                   <p className="mt-1.5 text-xs text-muted-foreground font-body leading-relaxed bg-violet-50/50 dark:bg-violet-900/10 border border-violet-100 dark:border-violet-800 rounded p-2">
-                    {document.classificationResult.llamaCloud.reasoning}
+                    {document.classificationResult.coreApi?.reasoning ??
+                      document.classificationResult.llamaCloud?.reasoning ??
+                      document.classificationResult.reasoning}
                   </p>
                 </details>
               )}
 
               {/* Skipped / failed notice */}
-              {document.classificationResult.llamaCloud?.status === "skipped" && (
+              {(document.classificationResult.coreApi?.status ?? document.classificationResult.llamaCloud?.status) === "skipped" && (
                 <p className="text-xs text-muted-foreground font-body mt-1">
                   AI classification was skipped for this file type.
                 </p>
               )}
-              {document.classificationResult.llamaCloud?.status === "failed" && (
+              {(document.classificationResult.coreApi?.status ?? document.classificationResult.llamaCloud?.status) === "failed" && (
                 <div className="flex items-center gap-1.5 text-xs text-red-600 mt-1">
                   <AlertTriangle className="h-3 w-3" />
                   AI classification failed — using rule-based type

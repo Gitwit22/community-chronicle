@@ -6,8 +6,10 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { ArchiveDocument, DocumentFilters, DocumentIntakeInput, ReviewMetadata } from "@/types/document";
+import type { ArchiveDocument, DocumentDisplayStatus, DocumentFilters, DocumentIntakeInput, ReviewMetadata } from "@/types/document";
+import { getDocumentDisplayStatus } from "@/types/document";
 import {
+  apiAttachFileToDocument,
   apiCreateManualEntry,
   apiBulkReprocess,
   apiDeleteDocument,
@@ -22,6 +24,7 @@ import {
   apiUploadSingleFile,
 } from "@/services/apiDocuments";
 import { detectDuplicates } from "@/services/duplicateDetectionService";
+import { processDocument } from "@/services/coreApiClient";
 
 const QUERY_KEYS = {
   documents: ["documents"] as const,
@@ -33,6 +36,59 @@ const QUERY_KEYS = {
   statusCounts: ["documents", "statusCounts"] as const,
   reviewQueue: ["documents", "reviewQueue"] as const,
 };
+
+function mapDocIntelTypeToCategory(docType?: string): ArchiveDocument["category"] | undefined {
+  if (!docType) return undefined;
+
+  const normalized = docType.toLowerCase();
+  if (normalized.includes("invoice") || normalized.includes("receipt") || normalized.includes("bank")) {
+    return "Financial Documents";
+  }
+  if (normalized.includes("grant") || normalized.includes("application") || normalized.includes("form")) {
+    return "Applications/Forms";
+  }
+  if (normalized.includes("contract") || normalized.includes("legal")) {
+    return "Legal Documents";
+  }
+  if (normalized.includes("minutes") || normalized.includes("board")) {
+    return "Meeting Minutes";
+  }
+  if (normalized.includes("newsletter")) {
+    return "Outreach Materials";
+  }
+  if (normalized.includes("report")) {
+    return "Reports";
+  }
+  if (normalized.includes("irs") || normalized.includes("tax")) {
+    return "Financial Documents";
+  }
+  return "Uncategorized";
+}
+
+async function runDirectDocIntelForFiles(files: File[]): Promise<{ inferredCategory?: ArchiveDocument["category"]; failures: number }> {
+  const jobs = await Promise.allSettled(
+    files.map((file) => processDocument(file, { parse: true, classify: true })),
+  );
+
+  const inferred = jobs
+    .filter((job): job is PromiseFulfilledResult<{ classify?: { documentType?: string } }> => job.status === "fulfilled")
+    .map((job) => mapDocIntelTypeToCategory(job.value.classify?.documentType))
+    .filter((category): category is ArchiveDocument["category"] => Boolean(category));
+
+  const unique = [...new Set(inferred)];
+  const inferredCategory = unique.length === 1 ? unique[0] : undefined;
+  const failures = jobs.filter((job) => job.status === "rejected").length;
+
+  if (failures > 0) {
+    console.warn("Direct Core API processing failed for some files before upload", {
+      total: files.length,
+      failures,
+    });
+  }
+
+  return { inferredCategory, failures };
+}
+
 
 /** Hook: Get all documents */
 export function useDocuments() {
@@ -124,8 +180,15 @@ export function useReviewQueue() {
 export function useUploadFile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ file, metadata }: { file: File; metadata?: Partial<DocumentIntakeInput> }) =>
-      apiUploadSingleFile(file, metadata),
+    mutationFn: async ({ file, metadata }: { file: File; metadata?: Partial<DocumentIntakeInput> }) => {
+      const intel = await processDocument(file, { parse: true, classify: true });
+      const inferredCategory = mapDocIntelTypeToCategory(intel.classify?.documentType);
+
+      return apiUploadSingleFile(file, {
+        ...metadata,
+        category: metadata?.category ?? inferredCategory,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -136,8 +199,13 @@ export function useUploadFile() {
 export function useUploadMultipleFiles() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ files, metadata }: { files: File[]; metadata?: Partial<DocumentIntakeInput> }) =>
-      apiUploadMultipleFiles(files, metadata),
+    mutationFn: async ({ files, metadata }: { files: File[]; metadata?: Partial<DocumentIntakeInput> }) => {
+      const intel = await runDirectDocIntelForFiles(files);
+      return apiUploadMultipleFiles(files, {
+        ...metadata,
+        category: metadata?.category ?? intel.inferredCategory,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -148,8 +216,14 @@ export function useUploadMultipleFiles() {
 export function useDragDropUpload() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ files, metadata }: { files: File[]; metadata?: Partial<DocumentIntakeInput> }) =>
-      apiUploadMultipleFiles(files, { ...metadata, intakeSource: "drag_drop" }),
+    mutationFn: async ({ files, metadata }: { files: File[]; metadata?: Partial<DocumentIntakeInput> }) => {
+      const intel = await runDirectDocIntelForFiles(files);
+      return apiUploadMultipleFiles(files, {
+        ...metadata,
+        intakeSource: "drag_drop",
+        category: metadata?.category ?? intel.inferredCategory,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -160,8 +234,26 @@ export function useDragDropUpload() {
 export function useBulkUpload() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ files, metadata }: { files: File[]; metadata?: Partial<DocumentIntakeInput> }) =>
-      apiUploadMultipleFiles(files, { ...metadata, intakeSource: "bulk_folder" }),
+    mutationFn: async ({
+      files,
+      metadata,
+      sourceReferences,
+    }: {
+      files: File[];
+      metadata?: Partial<DocumentIntakeInput>;
+      sourceReferences?: string[];
+    }) => {
+      const intel = await runDirectDocIntelForFiles(files);
+      return apiUploadMultipleFiles(
+        files,
+        {
+          ...metadata,
+          intakeSource: "bulk_folder",
+          category: metadata?.category ?? intel.inferredCategory,
+        },
+        sourceReferences,
+      );
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -172,8 +264,14 @@ export function useBulkUpload() {
 export function useScannerImport() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ files, metadata }: { files: File[]; metadata?: Partial<DocumentIntakeInput> }) =>
-      apiUploadMultipleFiles(files, { ...metadata, intakeSource: "scanner_import" }),
+    mutationFn: async ({ files, metadata }: { files: File[]; metadata?: Partial<DocumentIntakeInput> }) => {
+      const intel = await runDirectDocIntelForFiles(files);
+      return apiUploadMultipleFiles(files, {
+        ...metadata,
+        intakeSource: "scanner_import",
+        category: metadata?.category ?? intel.inferredCategory,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
@@ -188,6 +286,21 @@ export function useManualEntry() {
       apiCreateManualEntry(input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
+    },
+  });
+}
+
+/**
+ * Hook: Attach or replace the file on an existing document.
+ */
+export function useAttachFileToDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, file }: { id: string; file: File }) =>
+      apiAttachFileToDocument(id, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+      queryClient.invalidateQueries({ queryKey: ["documents", "reviewQueue"] });
     },
   });
 }
@@ -222,16 +335,18 @@ export function useBulkDeleteDocuments() {
     mutationFn: async (ids: string[]) => {
       const results = await Promise.allSettled(ids.map((id) => apiDeleteDocument(id)));
 
-      const deletedCount = results.filter((result) => result.status === "fulfilled" && result.value === true).length;
-      const notFoundCount = results.filter((result) => result.status === "fulfilled" && result.value === false).length;
-      const failedCount = results.filter((result) => result.status === "rejected").length;
+      const deletedCount = results.filter(
+        (r) => r.status === "fulfilled" && r.value.deleted,
+      ).length;
+      const notFoundCount = results.filter(
+        (r) => r.status === "fulfilled" && !r.value.deleted,
+      ).length;
+      const failedCount = results.filter((r) => r.status === "rejected").length;
+      const orphanedStorageCount = results.filter(
+        (r) => r.status === "fulfilled" && r.value.deleted && r.value.storageDeleted === false,
+      ).length;
 
-      return {
-        total: ids.length,
-        deletedCount,
-        notFoundCount,
-        failedCount,
-      };
+      return { total: ids.length, deletedCount, notFoundCount, failedCount, orphanedStorageCount };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });

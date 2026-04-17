@@ -86,11 +86,25 @@ export async function apiUploadSingleFile(
 
 export async function apiUploadMultipleFiles(
   files: File[],
-  metadata?: Partial<DocumentIntakeInput>
+  metadata?: Partial<DocumentIntakeInput>,
+  /**
+   * Per-file relative paths (same index as `files`).
+   * For folder uploads, pass `file.webkitRelativePath` for each file so the
+   * backend can persist per-file source provenance in `sourceReference`.
+   *
+   * Backend contract: read `sourceReferences` as a JSON-encoded string[] from
+   * FormData. Use `sourceReferences[i]` as the `sourceReference` for `files[i]`.
+   * The top-level `intakeSource` (e.g. "bulk_folder") is still taken from
+   * `metadata.intakeSource`.
+   */
+  sourceReferences?: string[]
 ): Promise<ArchiveDocument[]> {
   const formData = new FormData();
   files.forEach((file) => formData.append("files", file));
   appendOptionalMetadata(formData, metadata);
+  if (sourceReferences && sourceReferences.length > 0) {
+    formData.set("sourceReferences", JSON.stringify(sourceReferences));
+  }
 
   const response = await fetch(`${API_BASE}/documents/upload/batch`, {
     method: "POST",
@@ -99,6 +113,34 @@ export async function apiUploadMultipleFiles(
   });
 
   return parseJsonResponse<ArchiveDocument[]>(response);
+}
+
+/**
+ * Attach or replace the file on an existing manual-entry document.
+ *
+ * Backend contract: `POST /documents/:id/attach-file`
+ *   - FormData field: `file` (the uploaded file)
+ *   - On success: returns the updated ArchiveDocument with fileUrl populated
+ *   - Side effect: backend should re-queue the document for OCR/extraction
+ *     (equivalent to calling /retry afterwards), so callers do NOT need to
+ *     call apiRetryProcessing separately when a file is newly attached.
+ *   - If the document already had a file (replacing), the old file should be
+ *     deleted from storage before the new one is saved.
+ */
+export async function apiAttachFileToDocument(
+  id: string,
+  file: File,
+): Promise<ArchiveDocument> {
+  const formData = new FormData();
+  formData.set("file", file);
+
+  const response = await fetch(`${API_BASE}/documents/${id}/attach-file`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: formData,
+  });
+
+  return parseJsonResponse<ArchiveDocument>(response);
 }
 
 export async function apiCreateManualEntry(
@@ -126,15 +168,47 @@ export async function apiUpdateDocument(
   return parseJsonResponse<ArchiveDocument>(response);
 }
 
-export async function apiDeleteDocument(id: string): Promise<boolean> {
+/**
+ * Delete a document record and its associated stored file.
+ *
+ * Backend contract: `DELETE /documents/:id`
+ *   - Must delete the DB record AND the stored file:
+ *     - R2-backed: delete the object from the R2 bucket using the S3 client
+ *     - Local/network-backed: delete the file from disk
+ *   - Response body (optional but preferred):
+ *     `{ deleted: true, storageDeleted: boolean, fileUrl?: string }`
+ *   - If storage deletion fails, still return 200 with `storageDeleted: false`
+ *     so the frontend can surface a warning about orphaned blobs.
+ *   - Returns 404 if document not found; do NOT 500 on storage-only errors.
+ *
+ * Migration/backfill note: existing documents created before this change may
+ * have fileUrl values that are relative paths (local) or full R2 URLs. The
+ * backend should normalise the key by stripping the R2 public URL prefix when
+ * calling `DeleteObjectCommand`.
+ */
+export async function apiDeleteDocument(id: string): Promise<{ deleted: boolean; storageDeleted?: boolean }> {
   const response = await fetch(`${API_BASE}/documents/${id}`, {
     method: "DELETE",
     headers: getAuthHeaders(),
   });
 
-  if (response.status === 404) return false;
-  await parseJsonResponse<void>(response);
-  return true;
+  if (response.status === 404) return { deleted: false };
+  if (response.status === 204) return { deleted: true, storageDeleted: true };
+
+  try {
+    const body = (await response.json()) as Record<string, unknown>;
+    if (!response.ok) {
+      const msg = typeof body.error === "string" ? body.error : `Delete failed: ${response.status}`;
+      throw new Error(msg);
+    }
+    return {
+      deleted: body.deleted !== false,
+      storageDeleted: typeof body.storageDeleted === "boolean" ? body.storageDeleted : undefined,
+    };
+  } catch (e) {
+    if (!response.ok) throw e;
+    return { deleted: true, storageDeleted: undefined };
+  }
 }
 
 export async function apiRetryProcessing(id: string): Promise<ArchiveDocument> {

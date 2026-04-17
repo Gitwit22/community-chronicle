@@ -19,6 +19,7 @@ import { OrgUsersSettings } from "./pages/OrgUsersSettings.tsx";
 import { OrgRolesSettings } from "./pages/OrgRolesSettings.tsx";
 import { OrgProgramAccessSettings } from "./pages/OrgProgramAccessSettings.tsx";
 import { OrgInvitationsSettings } from "./pages/OrgInvitationsSettings.tsx";
+import DocIntelDebug from "./pages/DocIntelDebug.tsx";
 
 const queryClient = new QueryClient();
 
@@ -97,6 +98,7 @@ const App = () => (
               />
 
               {/* Main archive app — protected, requires valid Chronicle session */}
+              <Route path="/debug/doc-intel" element={<ProtectedRoute><DocIntelDebug /></ProtectedRoute>} />
               <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
               {/* Redirect old entry-point hits */}
               <Route path="/index" element={<Navigate to="/" replace />} />
@@ -111,4 +113,9 @@ const App = () => (
 );
 
 export default App;
+
+
+
+
+
 

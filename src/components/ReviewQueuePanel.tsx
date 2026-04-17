@@ -2,18 +2,29 @@
  * Review Queue Panel
  *
  * Displays documents that need human review, sorted by priority.
- * Shows reason, confidence, status, and quick actions.
+ * Data is sourced directly from GET /api/review-queue — this component does NOT
+ * filter from the general document list.
+ *
+ * Actions (approve / reject / retry) are only rendered for users with
+ * reviewer or admin role; uploaders see the queue read-only.
+ *
+ * Manual-entry records whose only review reason is "missing_file" are
+ * suppressed from this queue (they appear in the document list with an
+ * "Attach file" indicator instead).
  */
 
-import { Eye, AlertTriangle, CheckCircle2, RefreshCw, Copy, XCircle } from "lucide-react";
+import { Eye, AlertTriangle, CheckCircle2, RefreshCw, Copy, XCircle, Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import ProcessingStatusBadge from "@/components/ProcessingStatusBadge";
 import type { ArchiveDocument } from "@/types/document";
 
 interface ReviewQueuePanelProps {
+  /** Documents returned by GET /api/review-queue — already filtered by backend */
   documents: ArchiveDocument[];
   isLoading?: boolean;
+  /** Whether the current user can approve / reject / retry items */
+  canResolve: boolean;
   onSelectDocument?: (doc: ArchiveDocument) => void;
   onResolve?: (docId: string, resolution: string) => void;
 }
@@ -24,7 +35,25 @@ const priorityColors: Record<string, string> = {
   low: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
 };
 
-const ReviewQueuePanel = ({ documents, isLoading = false, onSelectDocument, onResolve }: ReviewQueuePanelProps) => {
+/**
+ * Returns true when the document is a manual entry stuck solely because it
+ * has no file yet. These should not clog the review queue — they belong in
+ * the document list with an "Attach file" prompt.
+ */
+function isManualMissingFileOnly(doc: ArchiveDocument): boolean {
+  if (doc.intakeSource !== "manual_entry") return false;
+  const reasons = doc.review?.reason ?? [];
+  if (reasons.length === 0) return false;
+  return reasons.every((r) => r === "missing_file" || r === "no_file" || r === "file_missing");
+}
+
+const ReviewQueuePanel = ({
+  documents,
+  isLoading = false,
+  canResolve,
+  onSelectDocument,
+  onResolve,
+}: ReviewQueuePanelProps) => {
   if (isLoading) {
     return (
       <div className="text-center py-12">
@@ -37,9 +66,10 @@ const ReviewQueuePanel = ({ documents, isLoading = false, onSelectDocument, onRe
     );
   }
 
-  const reviewDocs = documents.filter(
-    (doc) => doc.review?.required && !doc.review?.resolution
-  );
+  // Filter out manual entries stuck only because of missing file — those
+  // belong in the document list with an "Attach file" prompt, not in the
+  // review queue.
+  const reviewDocs = documents.filter((doc) => !isManualMissingFileOnly(doc));
 
   const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
   const sorted = [...reviewDocs].sort((a, b) => {
@@ -70,6 +100,12 @@ const ReviewQueuePanel = ({ documents, isLoading = false, onSelectDocument, onRe
           </h3>
           <Badge variant="secondary" className="text-xs">{sorted.length}</Badge>
         </div>
+        {!canResolve && (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-body">
+            <Lock className="h-3.5 w-3.5" />
+            View only — reviewer role required to approve or reject
+          </div>
+        )}
       </div>
 
       {sorted.map((doc) => (
@@ -95,9 +131,12 @@ const ReviewQueuePanel = ({ documents, isLoading = false, onSelectDocument, onRe
               {doc.review?.reason && doc.review.reason.length > 0 && (
                 <div className="flex flex-wrap gap-1 mb-2">
                   {doc.review.reason.map((r, i) => (
-                    <span key={i} className="inline-flex items-center gap-1 text-xs text-orange-600 dark:text-orange-400 font-body">
+                    <span
+                      key={i}
+                      className="inline-flex items-center gap-1 text-xs text-orange-600 dark:text-orange-400 font-body"
+                    >
                       <AlertTriangle className="h-3 w-3" />
-                      {r}
+                      {r.replace(/_/g, " ")}
                     </span>
                   ))}
                 </div>
@@ -118,44 +157,47 @@ const ReviewQueuePanel = ({ documents, isLoading = false, onSelectDocument, onRe
               </div>
             </div>
 
-            <div className="flex items-center gap-1 flex-shrink-0">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onResolve?.(doc.id, "approved");
-                }}
-              >
-                <CheckCircle2 className="h-3 w-3 mr-1" />
-                Approve
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onResolve?.(doc.id, "reprocessed");
-                }}
-              >
-                <RefreshCw className="h-3 w-3 mr-1" />
-                Retry
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs text-destructive"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onResolve?.(doc.id, "rejected");
-                }}
-              >
-                <XCircle className="h-3 w-3 mr-1" />
-                Reject
-              </Button>
-            </div>
+            {/* Actions — only shown to reviewers and admins */}
+            {canResolve && (
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onResolve?.(doc.id, "approved");
+                  }}
+                >
+                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                  Approve
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onResolve?.(doc.id, "reprocessed");
+                  }}
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  Retry
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onResolve?.(doc.id, "rejected");
+                  }}
+                >
+                  <XCircle className="h-3 w-3 mr-1" />
+                  Reject
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       ))}

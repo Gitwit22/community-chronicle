@@ -25,7 +25,7 @@ import Timeline from "@/components/Timeline";
 import ArchiveDashboard from "@/components/ArchiveDashboard";
 import ReviewQueuePanel from "@/components/ReviewQueuePanel";
 import StorageSettingsPanel from "@/components/StorageSettingsPanel";
-import { useBulkDeleteDocuments, useDeleteDocument, useDocuments, useDocumentYears, useBulkReprocess, useResolveReview, useRetryProcessing } from "@/hooks/useDocuments";
+import { useBulkDeleteDocuments, useDeleteDocument, useDocuments, useDocumentYears, useBulkReprocess, useResolveReview, useRetryProcessing, useReviewQueue } from "@/hooks/useDocuments";
 import { PROGRAM_DISPLAY_NAME, PROGRAM_SYSTEM_NAME } from "@/lib/programInfo";
 import type { ArchiveDocument, ReviewMetadata } from "@/types/document";
 import { toast } from "sonner";
@@ -57,6 +57,7 @@ const Index = () => {
 
   const { data: allDocuments = [], isLoading } = useDocuments();
   const { data: years = [] } = useDocumentYears();
+  const { data: reviewQueue = [], isLoading: isReviewLoading } = useReviewQueue();
   const resolveReviewMutation = useResolveReview();
   const retryProcessingMutation = useRetryProcessing();
   const bulkReprocessMutation = useBulkReprocess();
@@ -65,6 +66,10 @@ const Index = () => {
 
   // Show settings tab if: org admin/owner, OR legacy app-level admin, OR suite admin
   const showSettings = canManage || role === "admin" || isSuiteAdmin(user);
+
+  // Review tab and resolve actions: reviewer and admin only.
+  // Uploaders can submit documents but cannot approve/reject — hide the tab entirely.
+  const canReview = role === "reviewer" || role === "admin" || isSuiteAdmin(user);
 
   const handleOpenSuite = () => {
     const suiteBase =
@@ -108,7 +113,17 @@ const Index = () => {
       if (filters.financialCategory && doc.financialCategory !== filters.financialCategory) return false;
       if (filters.financialDocumentType && doc.financialDocumentType !== filters.financialDocumentType) return false;
       if (filters.intakeSource && doc.intakeSource !== filters.intakeSource) return false;
-      if (filters.processingStatus && doc.processingStatus !== filters.processingStatus) return false;
+      if (filters.processingStatus) {
+        // "archived" is a lifecycle state (doc.status), not a processingStatus value.
+        // "review_required" maps to both lifecycle "review_required" and processingStatus "needs_review".
+        if (filters.processingStatus === "archived") {
+          if (doc.status !== "archived") return false;
+        } else if (filters.processingStatus === "review_required") {
+          if (doc.status !== "review_required" && doc.processingStatus !== "needs_review") return false;
+        } else {
+          if (doc.processingStatus !== filters.processingStatus) return false;
+        }
+      }
 
       return true;
     });
@@ -132,9 +147,15 @@ const Index = () => {
 
   const handleDeleteDocument = (docId: string) => {
     deleteDocumentMutation.mutate(docId, {
-      onSuccess: (deleted) => {
-        if (deleted) {
-          toast.success("Document deleted.");
+      onSuccess: (result) => {
+        if (result.deleted) {
+          if (result.storageDeleted === false) {
+            toast.warning(
+              "Document record deleted, but the stored file could not be removed from object storage. Check the storage backend for orphaned blobs.",
+            );
+          } else {
+            toast.success("Document deleted.");
+          }
           setSelectedDocumentIds((prev) => prev.filter((id) => id !== docId));
           setSelectedDoc(null);
           return;
@@ -179,6 +200,11 @@ const Index = () => {
         }
         if (result.failedCount > 0) {
           toast.error(`${result.failedCount} document${result.failedCount !== 1 ? "s failed" : " failed"} to delete.`);
+        }
+        if (result.orphanedStorageCount > 0) {
+          toast.warning(
+            `${result.orphanedStorageCount} file${result.orphanedStorageCount !== 1 ? "s were" : " was"} not removed from object storage. Check for orphaned blobs.`,
+          );
         }
 
         setSelectedDocumentIds([]);
@@ -367,10 +393,18 @@ const Index = () => {
               <SearchIcon className="h-4 w-4" />
               Document Library
             </TabsTrigger>
-            <TabsTrigger value="review" className="font-body gap-2">
-              <Eye className="h-4 w-4" />
-              Review Queue
-            </TabsTrigger>
+            {/* Review Queue is only visible to reviewers and admins */}
+            {canReview && (
+              <TabsTrigger value="review" className="font-body gap-2">
+                <Eye className="h-4 w-4" />
+                Review Queue
+                {reviewQueue.length > 0 && (
+                  <Badge variant="destructive" className="ml-1 h-4 text-[10px] px-1">
+                    {reviewQueue.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            )}
             <TabsTrigger value="timeline" className="font-body gap-2">
               <Clock className="h-4 w-4" />
               Timeline
@@ -501,10 +535,12 @@ const Index = () => {
             )}
           </TabsContent>
 
+          {/* Review tab content — only reachable by reviewers/admins (tab is hidden otherwise) */}
           <TabsContent value="review" className="space-y-6">
             <ReviewQueuePanel
-              documents={allDocuments}
-              isLoading={isLoading}
+              documents={reviewQueue}
+              isLoading={isReviewLoading}
+              canResolve={canReview}
               onSelectDocument={setSelectedDoc}
               onResolve={handleReviewResolve}
             />

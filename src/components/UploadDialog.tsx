@@ -37,6 +37,74 @@ import {
 } from "@/hooks/useDocuments";
 import { toast } from "sonner";
 
+/**
+ * File types the backend can actually extract text from.
+ * Do NOT add DOCX/XLSX/PPTX here until the backend has a real parser for them.
+ * Adding them only creates false-positive uploads that fail silently later.
+ */
+const SUPPORTED_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/tiff",
+  "image/bmp",
+  "image/webp",
+  "text/plain",
+  "text/csv",
+  "text/html",
+  "text/markdown",
+]);
+
+/** Extensions accepted by the file input — must match SUPPORTED_MIME_TYPES */
+const SUPPORTED_ACCEPT = ".pdf,.png,.jpg,.jpeg,.tiff,.bmp,.webp,.txt,.csv,.html,.md";
+
+/**
+ * MIME types that users might reasonably try to upload but are NOT yet
+ * supported. Shown as a clear rejection message instead of silently failing.
+ */
+const UNSUPPORTED_TYPE_LABELS: Record<string, string> = {
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX (Word)",
+  "application/msword": "DOC (Word)",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "XLSX (Excel)",
+  "application/vnd.ms-excel": "XLS (Excel)",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PPTX (PowerPoint)",
+  "application/vnd.ms-powerpoint": "PPT (PowerPoint)",
+  "application/zip": "ZIP archive",
+  "application/x-zip-compressed": "ZIP archive",
+};
+
+function classifyFiles(files: File[]): { accepted: File[]; rejected: { name: string; label: string }[] } {
+  const accepted: File[] = [];
+  const rejected: { name: string; label: string }[] = [];
+
+  for (const file of files) {
+    if (SUPPORTED_MIME_TYPES.has(file.type)) {
+      accepted.push(file);
+      continue;
+    }
+    const unsupportedLabel = UNSUPPORTED_TYPE_LABELS[file.type];
+    if (unsupportedLabel) {
+      rejected.push({ name: file.name, label: unsupportedLabel });
+    } else {
+      // Unknown type — check by extension as fallback
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+      const knownUnsupported: Record<string, string> = {
+        doc: "DOC (Word)", docx: "DOCX (Word)",
+        xls: "XLS (Excel)", xlsx: "XLSX (Excel)",
+        ppt: "PPT (PowerPoint)", pptx: "PPTX (PowerPoint)",
+      };
+      if (knownUnsupported[ext]) {
+        rejected.push({ name: file.name, label: knownUnsupported[ext] });
+      } else {
+        // Accept unknown types — backend can reject if truly unsupported
+        accepted.push(file);
+      }
+    }
+  }
+
+  return { accepted, rejected };
+}
+
 interface UploadDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -45,6 +113,9 @@ interface UploadDialogProps {
 const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  // Per-file relative paths for folder uploads (webkitRelativePath).
+  // Parallel array to selectedFiles — index i in folderPaths corresponds to selectedFiles[i].
+  const [folderPaths, setFolderPaths] = useState<string[]>([]);
   const [uploadMode, setUploadMode] = useState<"files" | "folder" | "scanner">("files");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -76,21 +147,57 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
     e.stopPropagation();
     setDragActive(false);
 
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      setSelectedFiles((prev) => [...prev, ...files]);
+    const raw = Array.from(e.dataTransfer.files);
+    if (raw.length === 0) return;
+
+    const { accepted, rejected } = classifyFiles(raw);
+
+    if (rejected.length > 0) {
+      const names = rejected.map((r) => `"${r.name}" (${r.label})`).join(", ");
+      toast.error(
+        `${rejected.length === 1 ? "This format is" : "These formats are"} not yet supported: ${names}. Use PDF, images, or plain text.`,
+        { duration: 6000 },
+      );
+    }
+
+    if (accepted.length > 0) {
+      setSelectedFiles((prev) => [...prev, ...accepted]);
     }
   }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files ? Array.from(e.target.files) : [];
-    if (files.length > 0) {
-      setSelectedFiles((prev) => [...prev, ...files]);
+    const raw = e.target.files ? Array.from(e.target.files) : [];
+    if (raw.length === 0) return;
+
+    // Scanner mode accepts image/PDF only; we've already constrained via accept attr,
+    // but validate again client-side for drag-and-drop and folder picker paths.
+    const { accepted, rejected } = uploadMode === "folder" ? { accepted: raw, rejected: [] } : classifyFiles(raw);
+
+    if (rejected.length > 0) {
+      const names = rejected.map((r) => `"${r.name}" (${r.label})`).join(", ");
+      toast.error(
+        `${rejected.length === 1 ? "This format is" : "These formats are"} not yet supported: ${names}. Use PDF, images, or plain text.`,
+        { duration: 6000 },
+      );
+    }
+
+    if (accepted.length === 0) return;
+
+    setSelectedFiles((prev) => [...prev, ...accepted]);
+
+    // Preserve relative paths from folder picker (webkitRelativePath is set
+    // by the browser when using webkitdirectory; empty string for regular picks).
+    if (uploadMode === "folder") {
+      const paths = accepted.map((f) =>
+        (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name,
+      );
+      setFolderPaths((prev) => [...prev, ...paths]);
     }
   };
 
   const removeFile = (index: number) => {
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+    setFolderPaths((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleUpload = async () => {
@@ -99,7 +206,11 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
     try {
       switch (uploadMode) {
         case "folder":
-          await bulkUpload.mutateAsync({ files: selectedFiles });
+          // Pass per-file relative paths so the backend can persist archival provenance
+          await bulkUpload.mutateAsync({
+            files: selectedFiles,
+            sourceReferences: folderPaths.length === selectedFiles.length ? folderPaths : undefined,
+          });
           break;
         case "scanner":
           await scannerImport.mutateAsync({ files: selectedFiles });
@@ -147,6 +258,7 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
           onValueChange={(v) => {
             setUploadMode(v as typeof uploadMode);
             setSelectedFiles([]);
+            setFolderPaths([]);
           }}
           className="mt-4"
         >
@@ -191,7 +303,7 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
                 </button>
               </p>
               <p className="font-body text-xs text-muted-foreground">
-                Supports PDF, images, Word, Excel, text files, and more
+                Supported: PDF, images (PNG, JPEG, TIFF, BMP, WebP), plain text, CSV, HTML, Markdown
               </p>
               <input
                 ref={fileInputRef}
@@ -199,7 +311,7 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
                 multiple
                 className="hidden"
                 onChange={handleFileSelect}
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg,.tiff,.bmp,.webp,.html,.md"
+                accept={SUPPORTED_ACCEPT}
               />
             </div>
           </TabsContent>
@@ -271,7 +383,7 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setSelectedFiles([])}
+                onClick={() => { setSelectedFiles([]); setFolderPaths([]); }}
                 className="text-muted-foreground hover:text-foreground"
               >
                 Clear all
@@ -284,8 +396,12 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
                   className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-md"
                 >
                   <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  <span className="font-body text-sm text-foreground truncate flex-1">
-                    {file.name}
+                  <span
+                    className="font-body text-sm text-foreground truncate flex-1"
+                    title={folderPaths[i] || file.name}
+                  >
+                    {/* Show full relative path for folder uploads so users can verify provenance */}
+                    {uploadMode === "folder" && folderPaths[i] ? folderPaths[i] : file.name}
                   </span>
                   <Badge variant="outline" className="text-xs font-body">
                     {formatFileSize(file.size)}
