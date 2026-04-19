@@ -1,0 +1,82 @@
+# Cloudflare Pages deployment configuration for Community Chronicle
+# Non-secret build-time vars are declared here.
+# Sensitive values (API tokens) must be set via `wrangler secret put` or the CF Pages dashboard.
+# See scripts/setup-cf-secrets.sh for the full secret setup workflow.
+
+name = "community-chronicle"
+pages_build_output_dir = "dist"
+compatibility_date = "2024-01-15"
+compatibility_flags = ["nodejs_compat"]
+
+# ---------------------------------------------------------------------------
+# Production environment
+# ---------------------------------------------------------------------------
+[env.production]
+vars = { ENVIRONMENT = "production" }
+
+[env.production.vars]
+VITE_API_BASE_URL                              = "https://api.nxtlvl.app/api"
+VITE_SUITE_URL                                 = "https://suite.nxtlvl.app"
+VITE_DOC_INTEL_API_URL                         = "https://doc-intel.nxtlvl.app"
+VITE_DOC_TYPE_CONFIDENCE_THRESHOLD             = "0.6"
+
+# Llama extraction schema IDs — non-secret config identifiers
+VITE_LLAMA_SCHEMA_DOCUMENT_CLASSIFIER_RESULT   = "cfg-ab0cav8xvylvzr2j3vjnzev19l3u"
+VITE_LLAMA_SCHEMA_VOUCHER_COVER                = "cfg-qh8kw3krirnfjpe7cnmtwndcuh8q"
+VITE_LLAMA_SCHEMA_VENDOR_INVOICE               = "cfg-dcf0u301vj67g7a5gb5lcs7oi4o9"
+VITE_LLAMA_SCHEMA_DEPOSIT_SUMMARY              = "cfg-7t1wktm7e8g2jiaeh8zagg5ile14"
+VITE_LLAMA_SCHEMA_CHECK_IMAGE                  = "cfg-0qwu94bdh2tcep1881vxoak1bp6j"
+VITE_LLAMA_SCHEMA_DONOR_ACKNOWLEDGMENT_LETTER  = "cfg-sd3gvogfwzvdrtgk4fnluicyilh7"
+VITE_LLAMA_SCHEMA_DONATION_REPLY_CARD          = "cfg-xueeuio3b6xkvnuhegun4fkguuyf"
+VITE_LLAMA_SCHEMA_BANK_STATEMENT_OR_RECONCILIATION = "cfg-14oyv05pm1i3d2cqhf1oh0rd9mf9"
+VITE_LLAMA_SCHEMA_PAYMENT_CONFIRMATION         = "cfg-j70yj4opktqiuewnxek9pyuwmf22"
+VITE_LLAMA_SCHEMA_UNKNOWN_DOCUMENT             = "cfg-b6cwlmqsr1zfwyrw70wewn04soi4"
+
+# VITE_DOC_INTEL_API_TOKEN — set as a secret, NOT here:
+#   wrangler pages secret put VITE_DOC_INTEL_API_TOKEN --project-name community-chronicle --env production
+
+# ---------------------------------------------------------------------------
+# Staging environment
+# ---------------------------------------------------------------------------
+[env.staging]
+vars = { ENVIRONMENT = "staging" }
+
+[env.staging.vars]
+VITE_API_BASE_URL                              = "https://staging-api.nxtlvl.app/api"
+VITE_SUITE_URL                                 = "https://staging-suite.nxtlvl.app"
+VITE_DOC_INTEL_API_URL                         = "https://staging-doc-intel.nxtlvl.app"
+VITE_DOC_TYPE_CONFIDENCE_THRESHOLD             = "0.6"
+
+VITE_LLAMA_SCHEMA_DOCUMENT_CLASSIFIER_RESULT   = "cfg-ab0cav8xvylvzr2j3vjnzev19l3u"
+VITE_LLAMA_SCHEMA_VOUCHER_COVER                = "cfg-qh8kw3krirnfjpe7cnmtwndcuh8q"
+VITE_LLAMA_SCHEMA_VENDOR_INVOICE               = "cfg-dcf0u301vj67g7a5gb5lcs7oi4o9"
+VITE_LLAMA_SCHEMA_DEPOSIT_SUMMARY              = "cfg-7t1wktm7e8g2jiaeh8zagg5ile14"
+VITE_LLAMA_SCHEMA_CHECK_IMAGE                  = "cfg-0qwu94bdh2tcep1881vxoak1bp6j"
+VITE_LLAMA_SCHEMA_DONOR_ACKNOWLEDGMENT_LETTER  = "cfg-sd3gvogfwzvdrtgk4fnluicyilh7"
+VITE_LLAMA_SCHEMA_DONATION_REPLY_CARD          = "cfg-xueeuio3b6xkvnuhegun4fkguuyf"
+VITE_LLAMA_SCHEMA_BANK_STATEMENT_OR_RECONCILIATION = "cfg-14oyv05pm1i3d2cqhf1oh0rd9mf9"
+VITE_LLAMA_SCHEMA_PAYMENT_CONFIRMATION         = "cfg-j70yj4opktqiuewnxek9pyuwmf22"
+VITE_LLAMA_SCHEMA_UNKNOWN_DOCUMENT             = "cfg-b6cwlmqsr1zfwyrw70wewn04soi4"
+
+# ---------------------------------------------------------------------------
+# Preview / development environment
+# ---------------------------------------------------------------------------
+[env.preview]
+vars = { ENVIRONMENT = "preview" }
+
+[env.preview.vars]
+VITE_API_BASE_URL                              = "http://localhost:4000/api"
+VITE_SUITE_URL                                 = "http://localhost:3000"
+VITE_DOC_INTEL_API_URL                         = "http://localhost:4010"
+VITE_DOC_TYPE_CONFIDENCE_THRESHOLD             = "0.6"
+
+VITE_LLAMA_SCHEMA_DOCUMENT_CLASSIFIER_RESULT   = "cfg-ab0cav8xvylvzr2j3vjnzev19l3u"
+VITE_LLAMA_SCHEMA_VOUCHER_COVER                = "cfg-qh8kw3krirnfjpe7cnmtwndcuh8q"
+VITE_LLAMA_SCHEMA_VENDOR_INVOICE               = "cfg-dcf0u301vj67g7a5gb5lcs7oi4o9"
+VITE_LLAMA_SCHEMA_DEPOSIT_SUMMARY              = "cfg-7t1wktm7e8g2jiaeh8zagg5ile14"
+VITE_LLAMA_SCHEMA_CHECK_IMAGE                  = "cfg-0qwu94bdh2tcep1881vxoak1bp6j"
+VITE_LLAMA_SCHEMA_DONOR_ACKNOWLEDGMENT_LETTER  = "cfg-sd3gvogfwzvdrtgk4fnluicyilh7"
+VITE_LLAMA_SCHEMA_DONATION_REPLY_CARD          = "cfg-xueeuio3b6xkvnuhegun4fkguuyf"
+VITE_LLAMA_SCHEMA_BANK_STATEMENT_OR_RECONCILIATION = "cfg-14oyv05pm1i3d2cqhf1oh0rd9mf9"
+VITE_LLAMA_SCHEMA_PAYMENT_CONFIRMATION         = "cfg-j70yj4opktqiuewnxek9pyuwmf22"
+VITE_LLAMA_SCHEMA_UNKNOWN_DOCUMENT             = "cfg-b6cwlmqsr1zfwyrw70wewn04soi4"

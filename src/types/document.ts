@@ -192,6 +192,17 @@ export interface CoreApiClassification {
   classifiedAt: string;
 }
 
+export type ExtractionDocumentType =
+  | "voucher_cover"
+  | "vendor_invoice"
+  | "deposit_summary"
+  | "check_image"
+  | "donor_acknowledgment_letter"
+  | "donation_reply_card"
+  | "bank_statement_or_reconciliation"
+  | "payment_confirmation"
+  | "unknown_document";
+
 /** AI/rule-based classification result */
 export interface ClassificationResult {
   category: DocumentCategory;
@@ -336,6 +347,22 @@ export interface ExtractionMetadata {
   extractionQuality?: "full_extraction" | "partial_extraction" | "minimal_extraction" | "unsupported_format" | "no_extraction";
   /** Number of words extracted */
   contentLength?: number;
+  /** Routed extraction document type */
+  documentType?: ExtractionDocumentType | string;
+  /** Classifier confidence used to select document type */
+  classificationConfidence?: number;
+  /** Schema ID/name used for extraction */
+  schemaUsed?: string;
+  /** Flattened extracted payload for review/edit */
+  extractedData?: Record<string, string>;
+  /** Raw extraction API response payload */
+  rawExtractionResponse?: unknown;
+  /** Raw parsed text retained for debugging */
+  rawParsedText?: string;
+  /** Raw parse API response payload */
+  rawParseResponse?: unknown;
+  /** True when unknown/fallback path was used */
+  fallbackPathUsed?: boolean;
 }
 
 /** Duplicate detection metadata */

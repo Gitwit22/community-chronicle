@@ -6,6 +6,8 @@ import {
   parseDocument,
   processDocument,
   type ClassifyResult,
+  type ExtractRequestOptions,
+  type ExtractResult,
   type ParseResult,
   type ProcessResult,
 } from "@/services/coreApiClient";
@@ -30,11 +32,11 @@ export function useClassifyDocument() {
 
 export function useExtractDocument() {
   return useMutation<
-    { status: string; fields: Array<{ key: string; value: string; confidence?: number }> },
+    ExtractResult,
     Error,
-    { file: File; schema: unknown; onProgress?: (progress: number) => void }
+    { file: File; options: ExtractRequestOptions; onProgress?: (progress: number) => void }
   >({
-    mutationFn: ({ file, schema, onProgress }) => extractDocument(file, schema, onProgress),
+    mutationFn: ({ file, options, onProgress }) => extractDocument(file, options, onProgress),
   });
 }
 
@@ -44,7 +46,7 @@ export function useProcessDocument() {
     Error,
     {
       file: File;
-      options?: { parse?: boolean; classify?: boolean; extract?: boolean; schema?: unknown };
+      options?: { parse?: boolean; classify?: boolean; extract?: boolean; extractOptions?: ExtractRequestOptions };
     }
   >({
     mutationFn: ({ file, options }) => processDocument(file, options),

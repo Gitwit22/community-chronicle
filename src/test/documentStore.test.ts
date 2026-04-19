@@ -123,6 +123,35 @@ describe("documentStore", () => {
       const result = updateDocument("nonexistent", { title: "X" });
       expect(result).toBeUndefined();
     });
+
+    it("persists routed extraction payload fields", () => {
+      const updates: Partial<ArchiveDocument> = {
+        extraction: {
+          status: "complete",
+          method: "llama_cloud",
+          documentType: "vendor_invoice",
+          classificationConfidence: 0.88,
+          schemaUsed: "cfg-dcf0u301vj67g7a5gb5lcs7oi4o9",
+          extractedData: {
+            invoice_number: "INV-321",
+            amount_due: "$42.00",
+          },
+          rawExtractionResponse: {
+            status: "complete",
+            fields: [{ key: "invoice_number", value: "INV-321" }],
+          },
+          rawParsedText: "Invoice # INV-321",
+        },
+      };
+
+      updateDocument("1", updates);
+      const saved = getDocumentById("1");
+
+      expect(saved?.extraction?.documentType).toBe("vendor_invoice");
+      expect(saved?.extraction?.schemaUsed).toBe("cfg-dcf0u301vj67g7a5gb5lcs7oi4o9");
+      expect(saved?.extraction?.extractedData?.invoice_number).toBe("INV-321");
+      expect(saved?.extraction?.rawParsedText).toContain("INV-321");
+    });
   });
 
   describe("deleteDocument", () => {

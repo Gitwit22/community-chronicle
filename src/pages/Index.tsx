@@ -587,6 +587,7 @@ const Index = () => {
         document={selectedDoc}
         open={!!selectedDoc}
         onOpenChange={(open) => !open && setSelectedDoc(null)}
+        onDocumentUpdated={(updated) => setSelectedDoc(updated)}
         canDelete={role === "admin"}
         isDeleting={deleteDocumentMutation.isPending}
         onDelete={handleDeleteDocument}

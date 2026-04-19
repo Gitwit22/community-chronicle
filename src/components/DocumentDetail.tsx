@@ -1,4 +1,5 @@
-import { FileText, Calendar, User, Tag, Download, Sparkles, ExternalLink, Clock, Info, AlertTriangle, Shield, Copy, Trash2, Brain } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { FileText, Calendar, User, Tag, Download, Sparkles, ExternalLink, Clock, Info, AlertTriangle, Shield, Copy, Trash2, Brain, RefreshCw } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,11 +8,18 @@ import type { ArchiveDocument } from "@/types/document";
 import { MONTH_NAMES } from "@/types/document";
 import { downloadDocument, openOriginalDocument } from "@/lib/documentActions";
 import { toast } from "sonner";
+import {
+  EXTRACTION_DOCUMENT_TYPES,
+  type ExtractionDocumentType,
+} from "@/config/extractionSchemas";
+import { classifyAndExtractBySchema } from "@/services/extractionRoutingService";
+import { apiUpdateDocument } from "@/services/apiDocuments";
 
 interface DocumentDetailProps {
   document: ArchiveDocument | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onDocumentUpdated?: (document: ArchiveDocument) => void;
   canDelete?: boolean;
   isDeleting?: boolean;
   onDelete?: (documentId: string) => void;
@@ -24,20 +32,44 @@ function formatIntakeSource(source: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDeleting = false, onDelete }: DocumentDetailProps) => {
-  if (!document) return null;
+const DocumentDetail = ({
+  document,
+  open,
+  onOpenChange,
+  onDocumentUpdated,
+  canDelete = false,
+  isDeleting = false,
+  onDelete,
+}: DocumentDetailProps) => {
+  const [localDocument, setLocalDocument] = useState<ArchiveDocument | null>(document);
+  const [rerunType, setRerunType] = useState<ExtractionDocumentType>("unknown_document");
+  const [isRerunning, setIsRerunning] = useState(false);
 
-  const canOpenFile = Boolean(document.fileUrl);
+  useEffect(() => {
+    setLocalDocument(document);
+    setRerunType(((document?.extraction?.documentType ?? "unknown_document") as ExtractionDocumentType));
+  }, [document]);
+
+  if (!localDocument) return null;
+
+  const activeDocument = localDocument;
+
+  const canOpenFile = Boolean(activeDocument.fileUrl);
+
+  const structuredExtractionFields = useMemo(
+    () => activeDocument.extraction?.extractedData ?? {},
+    [activeDocument.extraction?.extractedData],
+  );
 
   const handleDownload = async () => {
-    const ok = await downloadDocument(document.fileUrl, document.originalFileName ?? document.title);
+    const ok = await downloadDocument(activeDocument.fileUrl, activeDocument.originalFileName ?? activeDocument.title);
     if (!ok) {
       toast.error("No file is available to download for this record.");
     }
   };
 
   const handleOpenOriginal = async () => {
-    const ok = await openOriginalDocument(document.fileUrl);
+    const ok = await openOriginalDocument(activeDocument.fileUrl);
     if (!ok) {
       toast.error("No original file is available for this record.");
     }
@@ -46,10 +78,82 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
   const handleDelete = () => {
     if (!onDelete) return;
     const confirmed = window.confirm(
-      `Delete \"${document.title}\"? This removes the document record and stored file.`
+      `Delete \"${activeDocument.title}\"? This removes the document record and stored file.`
     );
     if (!confirmed) return;
-    onDelete(document.id);
+    onDelete(activeDocument.id);
+  };
+
+  const handleRerunExtraction = async () => {
+    if (!activeDocument.fileUrl) {
+      toast.error("Cannot re-run extraction without an attached file.");
+      return;
+    }
+
+    setIsRerunning(true);
+    try {
+      const response = await fetch(activeDocument.fileUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to load original file (${response.status})`);
+      }
+
+      const blob = await response.blob();
+      const filename = activeDocument.originalFileName || `${activeDocument.title || "document"}.bin`;
+      const file = new File([blob], filename, { type: blob.type || activeDocument.mimeType || "application/octet-stream" });
+
+      const routed = await classifyAndExtractBySchema(file, {
+        overrideDocumentType: rerunType,
+      });
+
+      const lowConfidence = routed.classificationConfidence > 0 && routed.classificationConfidence < 0.6;
+      const updates: Partial<ArchiveDocument> = {
+        classificationResult: {
+          category: activeDocument.classificationResult?.category ?? "Uncategorized",
+          confidence: routed.classificationConfidence,
+          method: "ai_assisted",
+          provider: "core-api",
+          documentType: routed.documentType,
+          reasoning: routed.rawClassificationResponse.reasoning,
+          suggestedTags: activeDocument.classificationResult?.suggestedTags ?? [],
+          coreApi: {
+            provider: "core-api",
+            status: routed.rawClassificationResponse.status,
+            documentType: routed.documentType,
+            confidence: routed.classificationConfidence,
+            reasoning: routed.rawClassificationResponse.reasoning,
+            jobId: null,
+            decision: lowConfidence ? "needs_review" : "auto_accepted",
+            classifiedAt: new Date().toISOString(),
+          },
+        },
+        extraction: {
+          ...activeDocument.extraction,
+          status: routed.rawExtractionResponse.status === "failed" ? "failed" : "complete",
+          method: "llama_cloud",
+          confidence: routed.classificationConfidence,
+          extractedAt: new Date().toISOString(),
+          documentType: routed.documentType,
+          classificationConfidence: routed.classificationConfidence,
+          schemaUsed: routed.schemaUsed,
+          extractedData: routed.extractedData,
+          rawExtractionResponse: routed.rawExtractionResponse,
+          rawParsedText: routed.rawParsedText,
+          rawParseResponse: routed.rawParseResponse,
+          fallbackPathUsed: routed.fallbackPathUsed,
+          warningMessages: routed.fallbackPathUsed ? ["Used unknown_document fallback path"] : undefined,
+        },
+        extractedText: routed.rawParsedText || activeDocument.extractedText,
+      };
+
+      const updated = await apiUpdateDocument(activeDocument.id, updates);
+      setLocalDocument(updated);
+      onDocumentUpdated?.(updated);
+      toast.success("Extraction re-run complete.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to re-run extraction.");
+    } finally {
+      setIsRerunning(false);
+    }
   };
 
   return (
@@ -62,24 +166,24 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
             </div>
             <div>
               <DialogTitle className="font-display text-xl font-bold text-foreground leading-tight">
-                {document.title}
+                {activeDocument.title}
               </DialogTitle>
               <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <Calendar className="h-3.5 w-3.5" />
-                  {document.month
-                    ? `${MONTH_NAMES[document.month - 1]} ${document.year}`
-                    : document.year}
+                  {activeDocument.month
+                    ? `${MONTH_NAMES[activeDocument.month - 1]} ${activeDocument.year}`
+                    : activeDocument.year}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <User className="h-3.5 w-3.5" />
-                  {document.author}
+                  {activeDocument.author}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <Tag className="h-3.5 w-3.5" />
-                  {document.type}
+                  {activeDocument.type}
                 </span>
-                <ProcessingStatusBadge status={document.processingStatus} lifecycleStatus={document.status} />
+                <ProcessingStatusBadge status={activeDocument.processingStatus} lifecycleStatus={activeDocument.status} />
               </div>
             </div>
           </div>
@@ -92,25 +196,25 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
               Description
             </h4>
             <p className="text-muted-foreground font-body leading-relaxed">
-              {document.description}
+              {activeDocument.description}
             </p>
           </div>
 
           {/* Financial Classification */}
-          {(document.financialCategory || document.financialDocumentType) && (
+          {(activeDocument.financialCategory || activeDocument.financialDocumentType) && (
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
               <h4 className="font-display text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2 uppercase tracking-wider">
                 Financial Classification
               </h4>
               <div className="flex flex-wrap gap-2">
-                {document.financialCategory && (
+                {activeDocument.financialCategory && (
                   <Badge variant="secondary" className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
-                    {document.financialCategory}
+                    {activeDocument.financialCategory}
                   </Badge>
                 )}
-                {document.financialDocumentType && (
+                {activeDocument.financialDocumentType && (
                   <Badge variant="outline" className="border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400">
-                    {document.financialDocumentType}
+                    {activeDocument.financialDocumentType}
                   </Badge>
                 )}
               </div>
@@ -118,7 +222,7 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
           )}
 
           {/* AI Summary */}
-          {document.aiSummary && (
+          {activeDocument.aiSummary && (
             <div className="bg-primary/5 border border-primary/20 rounded-xl p-5">
               <div className="flex items-center gap-2 mb-3">
                 <Sparkles className="h-4 w-4 text-accent" />
@@ -127,13 +231,13 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
                 </h4>
               </div>
               <p className="text-foreground font-body leading-relaxed text-sm">
-                {document.aiSummary}
+                {activeDocument.aiSummary}
               </p>
             </div>
           )}
 
           {/* Extraction Status */}
-          {document.extraction && (
+          {activeDocument.extraction && (
             <div className="bg-muted/30 border border-border rounded-lg p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Shield className="h-4 w-4 text-muted-foreground" />
@@ -143,34 +247,44 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
               </div>
               <div className="grid grid-cols-2 gap-2 text-sm font-body">
                 <div className="text-muted-foreground">
-                  Status: <span className="text-foreground font-medium">{document.extraction.status}</span>
+                  Status: <span className="text-foreground font-medium">{activeDocument.extraction.status}</span>
                 </div>
-                {document.extraction.method && (
+                {activeDocument.extraction.method && (
                   <div className="text-muted-foreground">
-                    Method: <span className="text-foreground font-medium">{document.extraction.method}</span>
+                    Method: <span className="text-foreground font-medium">{activeDocument.extraction.method}</span>
                   </div>
                 )}
-                {document.extraction.confidence != null && (
+                {activeDocument.extraction.confidence != null && (
                   <div className="text-muted-foreground">
-                    Confidence: <span className={`font-medium ${document.extraction.confidence >= 0.7 ? "text-green-600" : document.extraction.confidence >= 0.4 ? "text-yellow-600" : "text-red-600"}`}>
-                      {(document.extraction.confidence * 100).toFixed(0)}%
+                    Confidence: <span className={`font-medium ${activeDocument.extraction.confidence >= 0.7 ? "text-green-600" : activeDocument.extraction.confidence >= 0.4 ? "text-yellow-600" : "text-red-600"}`}>
+                      {(activeDocument.extraction.confidence * 100).toFixed(0)}%
                     </span>
                   </div>
                 )}
-                {document.extraction.pageCount != null && (
+                {activeDocument.extraction.pageCount != null && (
                   <div className="text-muted-foreground">
-                    Pages: <span className="text-foreground font-medium">{document.extraction.pageCount}</span>
+                    Pages: <span className="text-foreground font-medium">{activeDocument.extraction.pageCount}</span>
                   </div>
                 )}
-                {document.extraction.extractedAt && (
+                {activeDocument.extraction.extractedAt && (
                   <div className="text-muted-foreground col-span-2">
-                    Extracted: <span className="text-foreground/60">{new Date(document.extraction.extractedAt).toLocaleString()}</span>
+                    Extracted: <span className="text-foreground/60">{new Date(activeDocument.extraction.extractedAt).toLocaleString()}</span>
+                  </div>
+                )}
+                {activeDocument.extraction.documentType && (
+                  <div className="text-muted-foreground">
+                    Detected Type: <span className="text-foreground font-medium">{activeDocument.extraction.documentType}</span>
+                  </div>
+                )}
+                {activeDocument.extraction.schemaUsed && (
+                  <div className="text-muted-foreground">
+                    Schema Used: <span className="text-foreground font-medium">{activeDocument.extraction.schemaUsed}</span>
                   </div>
                 )}
               </div>
-              {document.extraction.warningMessages && document.extraction.warningMessages.length > 0 && (
+              {activeDocument.extraction.warningMessages && activeDocument.extraction.warningMessages.length > 0 && (
                 <div className="mt-2 space-y-1">
-                  {document.extraction.warningMessages.map((w, i) => (
+                  {activeDocument.extraction.warningMessages.map((w, i) => (
                     <div key={i} className="flex items-center gap-1.5 text-xs text-yellow-600">
                       <AlertTriangle className="h-3 w-3" />
                       {w}
@@ -178,17 +292,58 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
                   ))}
                 </div>
               )}
-              {document.extraction.errorMessage && (
+              {activeDocument.extraction.errorMessage && (
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-red-600">
                   <AlertTriangle className="h-3 w-3" />
-                  {document.extraction.errorMessage}
+                  {activeDocument.extraction.errorMessage}
                 </div>
+              )}
+
+              <div className="mt-3 border-t border-border pt-3 space-y-2">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Re-run Extraction</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+                    value={rerunType}
+                    onChange={(e) => setRerunType(e.target.value as ExtractionDocumentType)}
+                    disabled={isRerunning}
+                  >
+                    {EXTRACTION_DOCUMENT_TYPES.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                  <Button type="button" size="sm" variant="outline" onClick={handleRerunExtraction} disabled={isRerunning || !canOpenFile}>
+                    <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isRerunning ? "animate-spin" : ""}`} />
+                    {isRerunning ? "Running..." : "Run with Type"}
+                  </Button>
+                </div>
+              </div>
+
+              {Object.keys(structuredExtractionFields).length > 0 && (
+                <div className="mt-3 border-t border-border pt-3">
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Structured Fields</p>
+                  <pre className="text-xs overflow-auto max-h-56 bg-muted p-3 rounded-md">{JSON.stringify(structuredExtractionFields, null, 2)}</pre>
+                </div>
+              )}
+
+              {activeDocument.extraction.rawExtractionResponse && (
+                <details className="mt-3">
+                  <summary className="text-xs text-primary cursor-pointer hover:underline">View raw extraction JSON</summary>
+                  <pre className="text-xs overflow-auto max-h-56 bg-muted p-3 rounded-md mt-2">{JSON.stringify(activeDocument.extraction.rawExtractionResponse, null, 2)}</pre>
+                </details>
+              )}
+
+              {activeDocument.extraction.rawParsedText && (
+                <details className="mt-3">
+                  <summary className="text-xs text-primary cursor-pointer hover:underline">View raw parsed text</summary>
+                  <pre className="text-xs overflow-auto max-h-56 bg-muted p-3 rounded-md mt-2 whitespace-pre-wrap">{activeDocument.extraction.rawParsedText}</pre>
+                </details>
               )}
             </div>
           )}
 
           {/* AI Document Classification */}
-          {document.classificationResult && (
+          {activeDocument.classificationResult && (
             <div className="bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Brain className="h-4 w-4 text-violet-600 dark:text-violet-400" />
@@ -196,8 +351,8 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
                   Document Classification
                 </h4>
                 <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-800 text-violet-600 dark:text-violet-300 font-body">
-                  {(document.classificationResult.coreApi?.status === "complete" ||
-                    document.classificationResult.llamaCloud?.status === "complete")
+                  {(activeDocument.classificationResult.coreApi?.status === "complete" ||
+                    activeDocument.classificationResult.llamaCloud?.status === "complete")
                     ? "AI · Core API"
                     : "Rule-based"}
                 </span>
@@ -205,14 +360,14 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
 
               {/* Primary result row */}
               {(() => {
-                const ai = document.classificationResult.coreApi ?? document.classificationResult.llamaCloud;
+                const ai = activeDocument.classificationResult.coreApi ?? activeDocument.classificationResult.llamaCloud;
                 const useAi = ai?.status === "complete" && ai.documentType !== "uncategorized";
                 const displayType = useAi
                   ? ai.documentType
-                  : document.classificationResult.documentType ?? document.type;
+                  : activeDocument.classificationResult.documentType ?? activeDocument.type;
                 const displayConfidence = useAi
                   ? ai.confidence
-                  : document.classificationResult.confidence;
+                  : activeDocument.classificationResult.confidence;
                 const confidenceClass =
                   (displayConfidence ?? 0) >= 0.85
                     ? "text-green-600 dark:text-green-400"
@@ -242,11 +397,11 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
                         <span className="text-foreground font-medium capitalize">{ai.status}</span>
                       </div>
                     )}
-                    {(ai?.decision ?? document.classificationResult.decision) && (
+                    {(ai?.decision ?? activeDocument.classificationResult.decision) && (
                       <div className="text-muted-foreground">
                         Decision:{" "}
-                        <span className={`font-medium capitalize ${(ai?.decision ?? document.classificationResult.decision) === "auto_accepted" ? "text-green-600 dark:text-green-400" : (ai?.decision ?? document.classificationResult.decision) === "needs_review" ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}`}>
-                          {(ai?.decision ?? document.classificationResult.decision)?.replace(/_/g, " ")}
+                        <span className={`font-medium capitalize ${(ai?.decision ?? activeDocument.classificationResult.decision) === "auto_accepted" ? "text-green-600 dark:text-green-400" : (ai?.decision ?? activeDocument.classificationResult.decision) === "needs_review" ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}`}>
+                          {(ai?.decision ?? activeDocument.classificationResult.decision)?.replace(/_/g, " ")}
                         </span>
                       </div>
                     )}
@@ -255,28 +410,28 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
               })()}
 
               {/* Llama Cloud reasoning — expandable */}
-              {(document.classificationResult.coreApi?.reasoning ||
-                document.classificationResult.llamaCloud?.reasoning ||
-                document.classificationResult.reasoning) && (
+              {(activeDocument.classificationResult.coreApi?.reasoning ||
+                activeDocument.classificationResult.llamaCloud?.reasoning ||
+                activeDocument.classificationResult.reasoning) && (
                 <details className="mt-1">
                   <summary className="text-xs text-violet-600 dark:text-violet-400 cursor-pointer hover:underline font-body select-none">
                     View AI reasoning
                   </summary>
                   <p className="mt-1.5 text-xs text-muted-foreground font-body leading-relaxed bg-violet-50/50 dark:bg-violet-900/10 border border-violet-100 dark:border-violet-800 rounded p-2">
-                    {document.classificationResult.coreApi?.reasoning ??
-                      document.classificationResult.llamaCloud?.reasoning ??
-                      document.classificationResult.reasoning}
+                    {activeDocument.classificationResult.coreApi?.reasoning ??
+                      activeDocument.classificationResult.llamaCloud?.reasoning ??
+                      activeDocument.classificationResult.reasoning}
                   </p>
                 </details>
               )}
 
               {/* Skipped / failed notice */}
-              {(document.classificationResult.coreApi?.status ?? document.classificationResult.llamaCloud?.status) === "skipped" && (
+              {(activeDocument.classificationResult.coreApi?.status ?? activeDocument.classificationResult.llamaCloud?.status) === "skipped" && (
                 <p className="text-xs text-muted-foreground font-body mt-1">
                   AI classification was skipped for this file type.
                 </p>
               )}
-              {(document.classificationResult.coreApi?.status ?? document.classificationResult.llamaCloud?.status) === "failed" && (
+              {(activeDocument.classificationResult.coreApi?.status ?? activeDocument.classificationResult.llamaCloud?.status) === "failed" && (
                 <div className="flex items-center gap-1.5 text-xs text-red-600 mt-1">
                   <AlertTriangle className="h-3 w-3" />
                   AI classification failed — using rule-based type
@@ -286,7 +441,7 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
           )}
 
           {/* Duplicate Check */}
-          {document.duplicateCheck && document.duplicateCheck.duplicateStatus !== "unique" && (
+          {activeDocument.duplicateCheck && activeDocument.duplicateCheck.duplicateStatus !== "unique" && (
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
               <div className="flex items-center gap-2 mb-2">
                 <Copy className="h-4 w-4 text-yellow-600" />
@@ -295,59 +450,59 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
                 </h4>
               </div>
               <p className="text-sm text-yellow-700 dark:text-yellow-300 font-body">
-                This document may be a duplicate of {document.duplicateCheck.possibleDuplicateIds?.length ?? 0} other document(s).
+                This document may be a duplicate of {activeDocument.duplicateCheck.possibleDuplicateIds?.length ?? 0} other document(s).
               </p>
             </div>
           )}
 
           {/* Review Status */}
-          {document.review?.required && !document.review?.resolution && (
+          {activeDocument.review?.required && !activeDocument.review?.resolution && (
             <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle className="h-4 w-4 text-orange-600" />
                 <h4 className="font-display text-sm font-semibold text-orange-800 dark:text-orange-200 uppercase tracking-wider">
                   Review Required
                 </h4>
-                {document.review.priority && (
+                {activeDocument.review.priority && (
                   <Badge variant="outline" className="text-xs">
-                    {document.review.priority}
+                    {activeDocument.review.priority}
                   </Badge>
                 )}
               </div>
-              {document.review.reason && document.review.reason.length > 0 && (
+              {activeDocument.review.reason && activeDocument.review.reason.length > 0 && (
                 <ul className="text-sm text-orange-700 dark:text-orange-300 font-body list-disc pl-4 space-y-0.5">
-                  {document.review.reason.map((r, i) => (
+                  {activeDocument.review.reason.map((r, i) => (
                     <li key={i}>{r}</li>
                   ))}
                 </ul>
               )}
             </div>
           )}
-          {document.review?.resolution && (
+          {activeDocument.review?.resolution && (
             <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
               <div className="flex items-center gap-2 mb-1">
                 <Shield className="h-4 w-4 text-green-600" />
                 <span className="font-display text-sm font-semibold text-green-800 dark:text-green-200 uppercase tracking-wider">
                   Reviewed
                 </span>
-                <Badge variant="outline" className="text-xs">{document.review.resolution}</Badge>
+                <Badge variant="outline" className="text-xs">{activeDocument.review.resolution}</Badge>
               </div>
-              {document.review.notes && (
-                <p className="text-sm text-green-700 dark:text-green-300 font-body mt-1">{document.review.notes}</p>
+              {activeDocument.review.notes && (
+                <p className="text-sm text-green-700 dark:text-green-300 font-body mt-1">{activeDocument.review.notes}</p>
               )}
             </div>
           )}
 
           {/* Extracted Text Preview */}
-          {document.extractedText && document.extractedText.length > 0 && (
+          {activeDocument.extractedText && activeDocument.extractedText.length > 0 && (
             <div>
               <h4 className="font-display text-sm font-semibold text-foreground mb-2 uppercase tracking-wider">
                 Extracted Text
               </h4>
               <div className="bg-muted/50 border border-border rounded-lg p-4 max-h-40 overflow-y-auto">
                 <p className="text-sm text-muted-foreground font-body whitespace-pre-wrap">
-                  {document.extractedText.slice(0, 1000)}
-                  {document.extractedText.length > 1000 && "..."}
+                  {activeDocument.extractedText.slice(0, 1000)}
+                  {activeDocument.extractedText.length > 1000 && "..."}
                 </p>
               </div>
             </div>
@@ -360,9 +515,9 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
             </h4>
             <div className="flex flex-wrap gap-2">
               <Badge variant="secondary" className="text-xs font-body font-medium">
-                {document.category}
+                {activeDocument.category}
               </Badge>
-              {document.tags.map((tag) => (
+              {activeDocument.tags.map((tag) => (
                 <Badge key={tag} variant="outline" className="text-xs font-body text-muted-foreground">
                   {tag}
                 </Badge>
@@ -378,49 +533,49 @@ const DocumentDetail = ({ document, open, onOpenChange, canDelete = false, isDel
             <div className="grid grid-cols-2 gap-2 text-sm font-body">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Info className="h-3.5 w-3.5" />
-                Source: {formatIntakeSource(document.intakeSource)}
+                Source: {formatIntakeSource(activeDocument.intakeSource)}
               </div>
-              {document.originalFileName && (
+              {activeDocument.originalFileName && (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <FileText className="h-3.5 w-3.5" />
-                  {document.originalFileName}
+                  {activeDocument.originalFileName}
                 </div>
               )}
-              {document.fileSize && (
+              {activeDocument.fileSize && (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Info className="h-3.5 w-3.5" />
-                  {(document.fileSize / 1024).toFixed(1)} KB
+                  {(activeDocument.fileSize / 1024).toFixed(1)} KB
                 </div>
               )}
-              {document.department && (
+              {activeDocument.department && (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Info className="h-3.5 w-3.5" />
-                  Dept: {document.department}
+                  Dept: {activeDocument.department}
                 </div>
               )}
-              {document.extractedMetadata?.wordCount && (
+              {activeDocument.extractedMetadata?.wordCount && (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Info className="h-3.5 w-3.5" />
-                  {document.extractedMetadata.wordCount} words
+                  {activeDocument.extractedMetadata.wordCount} words
                 </div>
               )}
-              {document.ocrStatus !== "not_needed" && (
+              {activeDocument.ocrStatus !== "not_needed" && (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Info className="h-3.5 w-3.5" />
-                  Text Processing: {document.ocrStatus}
+                  Text Processing: {activeDocument.ocrStatus}
                 </div>
               )}
             </div>
           </div>
 
           {/* Processing History */}
-          {document.processingHistory.length > 0 && (
+          {activeDocument.processingHistory.length > 0 && (
             <div>
               <h4 className="font-display text-sm font-semibold text-foreground mb-2 uppercase tracking-wider">
                 Processing History
               </h4>
               <div className="space-y-1 max-h-32 overflow-y-auto">
-                {document.processingHistory.map((event, i) => (
+                {activeDocument.processingHistory.map((event, i) => (
                   <div
                     key={i}
                     className="flex items-center gap-2 text-xs text-muted-foreground font-body"

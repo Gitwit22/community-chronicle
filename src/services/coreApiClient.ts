@@ -10,8 +10,14 @@ import {
   globalFrontendDocIntelMetrics,
   type FrontendMetricsOperation,
 } from "@/lib/docIntelMetrics";
+import {
+  getClassificationCategories,
+  normalizeExtractionDocumentType,
+  type ExtractionDocumentType,
+} from "@/config/extractionSchemas";
 
 export type DocumentType =
+  | ExtractionDocumentType
   | "irs_notice"
   | "bank_receipt"
   | "invoice"
@@ -46,24 +52,28 @@ export interface ClassifyResult {
 export interface ProcessResult {
   parse?: ParseResult;
   classify?: ClassifyResult;
-  extract?: {
-    status: string;
-    fields: Array<{ key: string; value: string; confidence?: number }>;
-  };
+  extract?: ExtractResult;
 }
 
-const DEFAULT_CATEGORIES: DocumentType[] = [
-  "irs_notice",
-  "bank_receipt",
-  "invoice",
-  "meeting_minutes",
-  "board_governance",
-  "grant_document",
-  "contract",
-  "newsletter",
-  "general_report",
-  "uncategorized",
-];
+export interface ExtractResult {
+  status: string;
+  fields: Array<{ key: string; value: string; confidence?: number }>;
+  documentType?: string;
+  schemaId?: string;
+  schemaName?: string;
+  confidence?: number;
+  raw?: unknown;
+  [key: string]: unknown;
+}
+
+export interface ExtractRequestOptions {
+  schema?: unknown;
+  schemaId?: string;
+  schemaName?: string;
+  documentType?: string;
+}
+
+const DEFAULT_CATEGORIES: DocumentType[] = getClassificationCategories();
 
 function getConfig() {
   const baseUrl = import.meta.env.VITE_DOC_INTEL_API_URL as string | undefined;
@@ -86,16 +96,16 @@ function classifyWithFallback(file: File): ClassifyResult {
   const name = file.name.toLowerCase();
   const mime = file.type.toLowerCase();
 
-  let documentType: DocumentType = "uncategorized";
-  if (name.includes("invoice")) documentType = "invoice";
-  else if (name.includes("receipt") || name.includes("bank")) documentType = "bank_receipt";
-  else if (name.includes("contract") || name.includes("agreement")) documentType = "contract";
-  else if (name.includes("newsletter")) documentType = "newsletter";
-  else if (name.includes("minutes")) documentType = "meeting_minutes";
-  else if (name.includes("grant")) documentType = "grant_document";
-  else if (name.includes("report")) documentType = "general_report";
-  else if (name.includes("irs") || name.includes("tax")) documentType = "irs_notice";
-  else if (mime.startsWith("image/")) documentType = "general_report";
+  let documentType: DocumentType = "unknown_document";
+  if (name.includes("voucher")) documentType = "voucher_cover";
+  else if (name.includes("invoice")) documentType = "vendor_invoice";
+  else if (name.includes("deposit")) documentType = "deposit_summary";
+  else if (name.includes("check")) documentType = "check_image";
+  else if (name.includes("acknowledgment") || name.includes("acknowledgement")) documentType = "donor_acknowledgment_letter";
+  else if (name.includes("reply") || name.includes("donation")) documentType = "donation_reply_card";
+  else if (name.includes("statement") || name.includes("reconciliation") || name.includes("bank")) documentType = "bank_statement_or_reconciliation";
+  else if (name.includes("payment")) documentType = "payment_confirmation";
+  else if (mime.startsWith("image/")) documentType = "check_image";
 
   return {
     provider: "rule-based-fallback",
@@ -232,13 +242,17 @@ export async function classifyDocument(
   const cats = categories ?? DEFAULT_CATEGORIES;
 
   try {
-    return await callEndpoint<ClassifyResult>(
+    const result = await callEndpoint<ClassifyResult>(
       "/classify",
       "classify",
       file,
       { categories: JSON.stringify(cats) },
       onProgress,
     );
+    return {
+      ...result,
+      documentType: normalizeExtractionDocumentType(result.documentType),
+    };
   } catch {
     const fallback = classifyWithFallback(file);
     recordMetric({
@@ -255,25 +269,40 @@ export async function classifyDocument(
 
 export async function extractDocument(
   file: File,
-  schema: unknown,
+  options: ExtractRequestOptions,
   onProgress?: (progress: number) => void,
-): Promise<{ status: string; fields: Array<{ key: string; value: string; confidence?: number }> }> {
+): Promise<ExtractResult> {
   if (!isCoreApiConfigured()) {
     throw new Error("Core API is not configured");
+  }
+
+  const additionalFields: Record<string, string> = {};
+  if (options.schema !== undefined) {
+    additionalFields.schema = JSON.stringify(options.schema);
+  }
+  if (options.schemaId) {
+    additionalFields.schemaId = options.schemaId;
+    additionalFields.schemaName = options.schemaId;
+  }
+  if (options.schemaName) {
+    additionalFields.schemaName = options.schemaName;
+  }
+  if (options.documentType) {
+    additionalFields.documentType = options.documentType;
   }
 
   return callEndpoint(
     "/extract",
     "extract",
     file,
-    { schema: JSON.stringify(schema) },
+    additionalFields,
     onProgress,
   );
 }
 
 export async function processDocument(
   file: File,
-  options: { parse?: boolean; classify?: boolean; extract?: boolean; schema?: unknown } = {
+  options: { parse?: boolean; classify?: boolean; extract?: boolean; extractOptions?: ExtractRequestOptions } = {
     parse: true,
     classify: true,
   },
@@ -288,8 +317,8 @@ export async function processDocument(
     result.classify = await classifyDocument(file);
   }
 
-  if (options.extract && options.schema) {
-    result.extract = await extractDocument(file, options.schema);
+  if (options.extract && options.extractOptions) {
+    result.extract = await extractDocument(file, options.extractOptions);
   }
 
   return result;

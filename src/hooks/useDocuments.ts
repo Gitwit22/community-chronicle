@@ -24,7 +24,7 @@ import {
   apiUploadSingleFile,
 } from "@/services/apiDocuments";
 import { detectDuplicates } from "@/services/duplicateDetectionService";
-import { processDocument } from "@/services/coreApiClient";
+import { classifyAndExtractBySchema, type RoutedExtractionResult } from "@/services/extractionRoutingService";
 
 const QUERY_KEYS = {
   documents: ["documents"] as const,
@@ -41,7 +41,16 @@ function mapDocIntelTypeToCategory(docType?: string): ArchiveDocument["category"
   if (!docType) return undefined;
 
   const normalized = docType.toLowerCase();
-  if (normalized.includes("invoice") || normalized.includes("receipt") || normalized.includes("bank")) {
+  if (
+    normalized.includes("voucher")
+    || normalized.includes("invoice")
+    || normalized.includes("deposit")
+    || normalized.includes("check")
+    || normalized.includes("donor")
+    || normalized.includes("donation")
+    || normalized.includes("bank")
+    || normalized.includes("payment")
+  ) {
     return "Financial Documents";
   }
   if (normalized.includes("grant") || normalized.includes("application") || normalized.includes("form")) {
@@ -65,28 +74,141 @@ function mapDocIntelTypeToCategory(docType?: string): ArchiveDocument["category"
   return "Uncategorized";
 }
 
-async function runDirectDocIntelForFiles(files: File[]): Promise<{ inferredCategory?: ArchiveDocument["category"]; failures: number }> {
+interface RoutedJobResult {
+  file: File;
+  routed?: RoutedExtractionResult;
+  error?: string;
+}
+
+async function runDirectDocIntelForFiles(files: File[]): Promise<{
+  inferredCategory?: ArchiveDocument["category"];
+  failures: number;
+  routedResults: RoutedJobResult[];
+}> {
   const jobs = await Promise.allSettled(
-    files.map((file) => processDocument(file, { parse: true, classify: true })),
+    files.map((file) => classifyAndExtractBySchema(file)),
   );
 
-  const inferred = jobs
-    .filter((job): job is PromiseFulfilledResult<{ classify?: { documentType?: string } }> => job.status === "fulfilled")
-    .map((job) => mapDocIntelTypeToCategory(job.value.classify?.documentType))
+  const routedResults: RoutedJobResult[] = jobs.map((job, index) => {
+    const file = files[index];
+    if (job.status === "fulfilled") {
+      return { file, routed: job.value };
+    }
+    return {
+      file,
+      error: job.reason instanceof Error ? job.reason.message : String(job.reason),
+    };
+  });
+
+  const inferred = routedResults
+    .filter((job): job is RoutedJobResult & { routed: RoutedExtractionResult } => Boolean(job.routed))
+    .map((job) => mapDocIntelTypeToCategory(job.routed.documentType))
     .filter((category): category is ArchiveDocument["category"] => Boolean(category));
 
   const unique = [...new Set(inferred)];
   const inferredCategory = unique.length === 1 ? unique[0] : undefined;
-  const failures = jobs.filter((job) => job.status === "rejected").length;
+  const failures = routedResults.filter((job) => !job.routed).length;
 
   if (failures > 0) {
-    console.warn("Direct Core API processing failed for some files before upload", {
+    console.warn("[community-chronicle] direct schema-routed extraction failed for some files before upload", {
       total: files.length,
       failures,
+      errors: routedResults.filter((job) => job.error).map((job) => ({ file: job.file.name, error: job.error })),
     });
   }
 
-  return { inferredCategory, failures };
+  return { inferredCategory, failures, routedResults };
+}
+
+function buildExtractionPersistencePayload(routed: RoutedExtractionResult): Pick<ArchiveDocument, "classificationResult" | "extraction" | "extractedText" | "needsReview" | "review"> {
+  const confidence = routed.classificationConfidence;
+  const lowConfidence = confidence > 0 && confidence < 0.6;
+
+  return {
+    classificationResult: {
+      category: mapDocIntelTypeToCategory(routed.documentType) ?? "Uncategorized",
+      confidence,
+      method: "ai_assisted",
+      provider: "core-api",
+      documentType: routed.documentType,
+      reasoning: routed.rawClassificationResponse.reasoning,
+      suggestedTags: [],
+      coreApi: {
+        provider: "core-api",
+        status: routed.rawClassificationResponse.status,
+        documentType: routed.documentType,
+        confidence,
+        reasoning: routed.rawClassificationResponse.reasoning,
+        jobId: null,
+        decision: lowConfidence ? "needs_review" : "auto_accepted",
+        classifiedAt: new Date().toISOString(),
+      },
+    },
+    extraction: {
+      status: routed.rawExtractionResponse.status === "failed" ? "failed" : "complete",
+      method: "llama_cloud",
+      confidence,
+      extractedAt: new Date().toISOString(),
+      documentType: routed.documentType,
+      classificationConfidence: confidence,
+      schemaUsed: routed.schemaUsed,
+      extractedData: routed.extractedData,
+      rawExtractionResponse: routed.rawExtractionResponse,
+      rawParsedText: routed.rawParsedText,
+      rawParseResponse: routed.rawParseResponse,
+      fallbackPathUsed: routed.fallbackPathUsed,
+      warningMessages: routed.fallbackPathUsed ? ["Used unknown_document fallback path"] : undefined,
+    },
+    extractedText: routed.rawParsedText,
+    needsReview: lowConfidence,
+    review: lowConfidence
+      ? {
+        required: true,
+        priority: "medium",
+        reason: ["Low classification confidence"],
+      }
+      : undefined,
+  };
+}
+
+async function persistRoutedExtractionResults(
+  uploadedDocs: ArchiveDocument[],
+  files: File[],
+  routedResults: RoutedJobResult[],
+): Promise<void> {
+  if (uploadedDocs.length === 0) return;
+
+  const fileByName = new Map(files.map((file) => [file.name, file]));
+  const routedByFileName = new Map(
+    routedResults
+      .filter((result): result is RoutedJobResult & { routed: RoutedExtractionResult } => Boolean(result.routed))
+      .map((result) => [result.file.name, result.routed]),
+  );
+
+  const updateJobs = uploadedDocs.map(async (doc) => {
+    const filename = doc.originalFileName;
+    if (!filename) return;
+
+    const routed = routedByFileName.get(filename);
+    if (!routed) return;
+
+    const payload = buildExtractionPersistencePayload(routed);
+    await apiUpdateDocument(doc.id, payload);
+
+    console.info("[community-chronicle] persisted schema-routed extraction payload", {
+      documentId: doc.id,
+      filename,
+      documentType: routed.documentType,
+      schemaUsed: routed.schemaUsed,
+    });
+
+    const sourceFile = fileByName.get(filename);
+    if (sourceFile) {
+      fileByName.delete(filename);
+    }
+  });
+
+  await Promise.allSettled(updateJobs);
 }
 
 
@@ -181,13 +303,25 @@ export function useUploadFile() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ file, metadata }: { file: File; metadata?: Partial<DocumentIntakeInput> }) => {
-      const intel = await processDocument(file, { parse: true, classify: true });
-      const inferredCategory = mapDocIntelTypeToCategory(intel.classify?.documentType);
+      const routed = await classifyAndExtractBySchema(file).catch((error) => {
+        console.warn("[community-chronicle] single-file schema routing failed, continuing upload", {
+          file: file.name,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return undefined;
+      });
+      const inferredCategory = mapDocIntelTypeToCategory(routed?.documentType);
 
-      return apiUploadSingleFile(file, {
+      const uploaded = await apiUploadSingleFile(file, {
         ...metadata,
         category: metadata?.category ?? inferredCategory,
       });
+
+      if (routed) {
+        await apiUpdateDocument(uploaded.id, buildExtractionPersistencePayload(routed));
+      }
+
+      return uploaded;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
@@ -201,10 +335,12 @@ export function useUploadMultipleFiles() {
   return useMutation({
     mutationFn: async ({ files, metadata }: { files: File[]; metadata?: Partial<DocumentIntakeInput> }) => {
       const intel = await runDirectDocIntelForFiles(files);
-      return apiUploadMultipleFiles(files, {
+      const uploaded = await apiUploadMultipleFiles(files, {
         ...metadata,
         category: metadata?.category ?? intel.inferredCategory,
       });
+      await persistRoutedExtractionResults(uploaded, files, intel.routedResults);
+      return uploaded;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
@@ -218,11 +354,13 @@ export function useDragDropUpload() {
   return useMutation({
     mutationFn: async ({ files, metadata }: { files: File[]; metadata?: Partial<DocumentIntakeInput> }) => {
       const intel = await runDirectDocIntelForFiles(files);
-      return apiUploadMultipleFiles(files, {
+      const uploaded = await apiUploadMultipleFiles(files, {
         ...metadata,
         intakeSource: "drag_drop",
         category: metadata?.category ?? intel.inferredCategory,
       });
+      await persistRoutedExtractionResults(uploaded, files, intel.routedResults);
+      return uploaded;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
@@ -244,7 +382,7 @@ export function useBulkUpload() {
       sourceReferences?: string[];
     }) => {
       const intel = await runDirectDocIntelForFiles(files);
-      return apiUploadMultipleFiles(
+      const uploaded = await apiUploadMultipleFiles(
         files,
         {
           ...metadata,
@@ -253,6 +391,8 @@ export function useBulkUpload() {
         },
         sourceReferences,
       );
+      await persistRoutedExtractionResults(uploaded, files, intel.routedResults);
+      return uploaded;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
@@ -266,11 +406,13 @@ export function useScannerImport() {
   return useMutation({
     mutationFn: async ({ files, metadata }: { files: File[]; metadata?: Partial<DocumentIntakeInput> }) => {
       const intel = await runDirectDocIntelForFiles(files);
-      return apiUploadMultipleFiles(files, {
+      const uploaded = await apiUploadMultipleFiles(files, {
         ...metadata,
         intakeSource: "scanner_import",
         category: metadata?.category ?? intel.inferredCategory,
       });
+      await persistRoutedExtractionResults(uploaded, files, intel.routedResults);
+      return uploaded;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
