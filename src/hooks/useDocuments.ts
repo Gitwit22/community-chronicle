@@ -318,7 +318,15 @@ export function useUploadFile() {
       });
 
       if (routed) {
-        await apiUpdateDocument(uploaded.id, buildExtractionPersistencePayload(routed));
+        try {
+          await apiUpdateDocument(uploaded.id, buildExtractionPersistencePayload(routed));
+        } catch (error) {
+          console.warn("[community-chronicle] could not persist schema-routed extraction payload for single upload", {
+            documentId: uploaded.id,
+            file: file.name,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
 
       return uploaded;
