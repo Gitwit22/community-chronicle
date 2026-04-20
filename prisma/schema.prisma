@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id                String    @id @default(cuid())
+  name              String
+  slug              String    @unique
+  subdomain         String?
+  contactEmail      String?
+  ownerEmail        String?
+  supportEmail      String?
+  phoneNumber       String?
+  industryType      String?
+  notes             String?
+  logoUrl           String?
+  bannerUrl         String?
+  primaryColor      String?
+  accentColor       String?
+  planType          String    @default("starter")
+  status            String    @default("active")
+  seatLimit         Int       @default(25)
+  trialEndsAt       DateTime?
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  members      Membership[]
+  documents    Document[]
+  storageSettings ProgramStorageSettings[]
+
+  @@index([isActive])
+  @@index([status])
+  @@index([slug])
+}
+
+model ProgramStorageSettings {
+  id             String   @id @default(cuid())
+  organizationId String
+  programDomain  String   @default("community-chronicle")
+  settings       Json     @default("{\"bucket\": \"community-chronicle\", \"provider\": \"r2\"}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, programDomain])
+  @@index([organizationId, programDomain])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  organizationId String
+  email        String
+  passwordHash String   @default("")
+  role         String   @default("uploader")
+  displayName  String   @default("")
+  firstName    String   @default("")
+  lastName     String   @default("")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships      Membership[]
+  createdDocuments Document[] @relation("CreatedBy")
+  uploadedDocuments Document[] @relation("UploadedBy")
+  reviewedDocuments Document[] @relation("ReviewedBy")
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@index([email])
+}
+
+model Membership {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  role           String   @default("member")
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@index([role])
+}
+
+model Document {
+  id               String   @id @default(cuid())
+  organizationId   String
+  fileName         String
+  fileType         String   // pdf, docx, xlsx, etc.
+  filePath         String   // S3/R2 path: org/{orgId}/documents/{fileId}
+  fileSize         Int
+  title            String?
+  description      String?
+  classification   String?  // document type extracted by LLM
+  status           String   @default("uploaded")  // uploaded, processing, classified, reviewed, archived
+  confidence       Float?   // classification confidence score
+  extractedData    Json?    // extracted fields from document intelligence
+  searchText       String?  // denormalized full-text search index
+  uploadedById     String
+  createdById      String
+  reviewedById     String?
+  reviewedAt       DateTime?
+  reviewNotes      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedBy      User        @relation("UploadedBy", fields: [uploadedById], references: [id])
+  createdBy       User        @relation("CreatedBy", fields: [createdById], references: [id])
+  reviewedBy      User?       @relation("ReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([classification])
+  @@index([uploadedAt: createdAt])
+  @@fulltext([searchText])
+}
+
+model SearchLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  query          String
+  resultCount    Int
+  executionMs    Int
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([createdAt])
+}
