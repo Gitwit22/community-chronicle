@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import SearchBar from "@/components/SearchBar";
-import FilterBar from "@/components/FilterBar";
+import FilterBar, { type Filters } from "@/components/FilterBar";
 import DocumentCard from "@/components/DocumentCard";
 import DocumentDetail from "@/components/DocumentDetail";
 import UploadDialog from "@/components/UploadDialog";
@@ -44,12 +44,30 @@ const ORG_ROLE_LABEL: Record<string, string> = {
   viewer: "Viewer",
 };
 
+const EMPTY_FILTERS: Filters = {
+  name: "",
+  year: "",
+  month: "",
+  category: "",
+  type: "",
+  financialCategory: "",
+  financialDocumentType: "",
+  intakeSource: "",
+  processingStatus: "",
+  documentType: "",
+  sourceName: "",
+  person: "",
+  company: "",
+  reviewRequired: false,
+};
+
 const Index = () => {
   const navigate = useNavigate();
   const { user, organizationId, organizationName, programDomain, role, logout } = useAuth();
   const { membership, canManage } = useOrgContext();
-  const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState({ year: "", month: "", category: "", type: "", financialCategory: "", financialDocumentType: "", intakeSource: "", processingStatus: "" });
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [selectedDoc, setSelectedDoc] = useState<ArchiveDocument | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -86,7 +104,11 @@ const Index = () => {
   };
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = searchQuery.trim().toLowerCase();
+    const nameQuery = filters.name.trim().toLowerCase();
+    const sourceQuery = filters.sourceName.trim().toLowerCase();
+    const personQuery = filters.person.trim().toLowerCase();
+    const companyQuery = filters.company.trim().toLowerCase();
 
     return allDocuments.filter((doc) => {
       if (q) {
@@ -95,6 +117,9 @@ const Index = () => {
           doc.description,
           doc.author,
           doc.extractedText,
+          doc.sourceName,
+          ...(doc.metaPeople ?? []),
+          ...(doc.metaCompanies ?? []),
           ...doc.tags,
           ...doc.keywords,
         ]
@@ -106,6 +131,26 @@ const Index = () => {
         }
       }
 
+      if (nameQuery) {
+        const nameHaystack = [doc.title, doc.author].join(" ").toLowerCase();
+        if (!nameHaystack.includes(nameQuery)) return false;
+      }
+
+      if (sourceQuery) {
+        const srcHaystack = (doc.sourceName ?? "").toLowerCase();
+        if (!srcHaystack.includes(sourceQuery)) return false;
+      }
+
+      if (personQuery) {
+        const peopleHaystack = (doc.metaPeople ?? []).join(" ").toLowerCase();
+        if (!peopleHaystack.includes(personQuery)) return false;
+      }
+
+      if (companyQuery) {
+        const companyHaystack = (doc.metaCompanies ?? []).join(" ").toLowerCase();
+        if (!companyHaystack.includes(companyQuery)) return false;
+      }
+
       if (filters.year && doc.year !== Number(filters.year)) return false;
       if (filters.month && doc.month !== Number(filters.month)) return false;
       if (filters.category && doc.category !== filters.category) return false;
@@ -113,9 +158,21 @@ const Index = () => {
       if (filters.financialCategory && doc.financialCategory !== filters.financialCategory) return false;
       if (filters.financialDocumentType && doc.financialDocumentType !== filters.financialDocumentType) return false;
       if (filters.intakeSource && doc.intakeSource !== filters.intakeSource) return false;
+
+      // Phase 2: document type from registry
+      if (filters.documentType && doc.documentType !== filters.documentType) return false;
+
+      // Phase 2: needs review
+      if (filters.reviewRequired) {
+        const isUnclassified =
+          doc.documentType === "other_unclassified" ||
+          doc.classificationStatus === "other_unclassified" ||
+          doc.reviewRequired === true;
+        const needsReview = doc.review?.required && !doc.review?.resolution;
+        if (!isUnclassified && !needsReview) return false;
+      }
+
       if (filters.processingStatus) {
-        // "archived" is a lifecycle state (doc.status), not a processingStatus value.
-        // "review_required" maps to both lifecycle "review_required" and processingStatus "needs_review".
         if (filters.processingStatus === "archived") {
           if (doc.status !== "archived") return false;
         } else if (filters.processingStatus === "review_required") {
@@ -127,12 +184,22 @@ const Index = () => {
 
       return true;
     });
-  }, [allDocuments, filters, search]);
+  }, [allDocuments, filters, searchQuery]);
 
   const documentCount = allDocuments.length;
 
   const handleDashboardFilter = (status: string) => {
-    setFilters({ year: "", month: "", category: "", type: "", financialCategory: "", financialDocumentType: "", intakeSource: "", processingStatus: status });
+    setFilters({ ...EMPTY_FILTERS, processingStatus: status });
+  };
+
+  const handleRunSearch = () => {
+    setSearchQuery(searchInput);
+  };
+
+  const handleClearSearchAndFilters = () => {
+    setSearchInput("");
+    setSearchQuery("");
+    setFilters(EMPTY_FILTERS);
   };
 
   const handleReviewResolve = (docId: string, resolution: string) => {
@@ -358,7 +425,13 @@ const Index = () => {
             racial equity and community empowerment.
           </p>
           <div className="flex justify-center mb-12">
-            <SearchBar value={search} onChange={setSearch} />
+            <SearchBar
+              value={searchInput}
+              onChange={setSearchInput}
+              onSearch={handleRunSearch}
+              onClear={handleClearSearchAndFilters}
+              clearLabel="Clear All"
+            />
           </div>
 
           {/* System capabilities */}

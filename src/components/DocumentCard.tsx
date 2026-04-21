@@ -1,9 +1,10 @@
-import { FileText, Download, Calendar, User, Tag, Sparkles, Copy, AlertTriangle, Trash2, CheckSquare, Square } from "lucide-react";
+import { FileText, Download, Calendar, User, Tag, Sparkles, Copy, AlertTriangle, Trash2, CheckSquare, Square, Building2, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import ProcessingStatusBadge from "@/components/ProcessingStatusBadge";
 import type { ArchiveDocument } from "@/types/document";
 import { MONTH_NAMES_SHORT } from "@/types/document";
 import { downloadDocument } from "@/lib/documentActions";
+import { getDocumentTypeLabel } from "@/services/documentTypeClassifier";
 
 interface DocumentCardProps {
   document: ArchiveDocument;
@@ -28,6 +29,10 @@ const DocumentCard = ({
 }: DocumentCardProps) => {
   const isDuplicate = document.duplicateCheck?.duplicateStatus === "possible_duplicate";
   const needsReview = document.review?.required && !document.review?.resolution;
+  const isUnclassified =
+    document.documentType === "other_unclassified" ||
+    document.classificationStatus === "other_unclassified" ||
+    document.reviewRequired === true;
 
   return (
     <div
@@ -61,10 +66,12 @@ const DocumentCard = ({
           })()}
 
           {/* Review Required Warning */}
-          {needsReview && (
+          {(needsReview || isUnclassified) && (
             <div className="flex items-center gap-1.5 mb-2 px-2 py-1 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded text-xs text-orange-700 dark:text-orange-300 font-body">
               <AlertTriangle className="h-3 w-3" />
-              Review required{document.review?.reason ? `: ${document.review.reason[0]}` : ""}
+              {isUnclassified
+                ? "Type: Other (Unclassified) — Needs review"
+                : `Review required${document.review?.reason ? `: ${document.review.reason[0]}` : ""}`}
             </div>
           )}
 
@@ -81,24 +88,61 @@ const DocumentCard = ({
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground mb-3">
             <span className="flex items-center gap-1.5">
               <Calendar className="h-3.5 w-3.5" />
-              {document.month
-                ? `${MONTH_NAMES_SHORT[document.month - 1]} ${document.year}`
-                : document.year}
+              {document.documentDate
+                ? document.documentDate
+                : document.month
+                  ? `${MONTH_NAMES_SHORT[document.month - 1]} ${document.year}`
+                  : document.year}
             </span>
-            <span className="flex items-center gap-1.5">
-              <User className="h-3.5 w-3.5" />
-              {document.author}
-            </span>
+            {document.sourceName ? (
+              <span className="flex items-center gap-1.5">
+                <Building2 className="h-3.5 w-3.5" />
+                {document.sourceName}
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5">
+                <User className="h-3.5 w-3.5" />
+                {document.author}
+              </span>
+            )}
             <span className="flex items-center gap-1.5">
               <Tag className="h-3.5 w-3.5" />
-              {document.type}
+              {document.documentType
+                ? getDocumentTypeLabel(document.documentType)
+                : document.type}
             </span>
           </div>
 
+          {/* Lightweight metadata: people + companies */}
+          {((document.metaPeople?.length ?? 0) > 0 || (document.metaCompanies?.length ?? 0) > 0) && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {document.metaPeople?.slice(0, 2).map((p) => (
+                <span key={p} className="inline-flex items-center gap-1 text-xs text-muted-foreground bg-muted rounded px-1.5 py-0.5">
+                  <Users className="h-2.5 w-2.5" />
+                  {p}
+                </span>
+              ))}
+              {document.metaCompanies?.slice(0, 2).map((c) => (
+                <span key={c} className="inline-flex items-center gap-1 text-xs text-muted-foreground bg-muted rounded px-1.5 py-0.5">
+                  <Building2 className="h-2.5 w-2.5" />
+                  {c}
+                </span>
+              ))}
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-1.5">
-            <Badge variant="secondary" className="text-xs font-body font-medium">
-              {document.category}
-            </Badge>
+            {/* Document type badge — primary visual indicator */}
+            {document.documentType && document.documentType !== "other_unclassified" && (
+              <Badge variant="secondary" className="text-xs font-body font-medium">
+                {getDocumentTypeLabel(document.documentType)}
+              </Badge>
+            )}
+            {!document.documentType && (
+              <Badge variant="secondary" className="text-xs font-body font-medium">
+                {document.category}
+              </Badge>
+            )}
             {document.financialCategory && (
               <Badge variant="secondary" className="text-xs font-body font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
                 {document.financialCategory}
@@ -109,7 +153,7 @@ const DocumentCard = ({
                 {document.financialDocumentType}
               </Badge>
             )}
-            {document.tags.slice(0, 3).map((tag) => (
+            {document.tags.slice(0, 2).map((tag) => (
               <Badge key={tag} variant="outline" className="text-xs font-body text-muted-foreground">
                 {tag}
               </Badge>

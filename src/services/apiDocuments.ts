@@ -1,4 +1,11 @@
-import type { ArchiveDocument, DocumentFilters, DocumentIntakeInput, ReviewMetadata } from "@/types/document";
+import type {
+  ArchiveDocument,
+  ChronicleDocumentType,
+  ChronicleTypeFingerprint,
+  DocumentFilters,
+  DocumentIntakeInput,
+  ReviewMetadata,
+} from "@/types/document";
 import { API_BASE } from "@/lib/apiBase";
 import { getAuthHeaders } from "@/lib/tokenStorage";
 
@@ -27,6 +34,15 @@ function buildQuery(filters: DocumentFilters): string {
   if (filters.category) params.set("category", filters.category);
   if (filters.processingStatus) params.set("processingStatus", filters.processingStatus);
   if (filters.intakeSource) params.set("intakeSource", filters.intakeSource);
+  // Phase 2: lightweight metadata filters
+  if (filters.documentType) params.set("documentType", filters.documentType);
+  if (filters.sourceName) params.set("sourceName", filters.sourceName);
+  if (filters.person) params.set("person", filters.person);
+  if (filters.company) params.set("company", filters.company);
+  if (filters.location) params.set("location", filters.location);
+  if (filters.referenceNumber) params.set("referenceNumber", filters.referenceNumber);
+  if (filters.reviewRequired !== undefined) params.set("reviewRequired", String(filters.reviewRequired));
+  if (filters.classificationStatus) params.set("classificationStatus", filters.classificationStatus);
 
   const query = params.toString();
   return query ? `?${query}` : "";
@@ -263,4 +279,117 @@ export async function apiMarkForReview(
   });
 
   return parseJsonResponse<ArchiveDocument>(response);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2: Document type registry
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Get all document types (system + custom) */
+export async function apiGetDocumentTypes(): Promise<ChronicleDocumentType[]> {
+  const response = await fetch(`${API_BASE}/document-types`, {
+    headers: getAuthHeaders(),
+  });
+  return parseJsonResponse<ChronicleDocumentType[]>(response);
+}
+
+/** Create a new custom document type */
+export async function apiCreateDocumentType(input: {
+  key: string;
+  label: string;
+  description?: string;
+}): Promise<ChronicleDocumentType> {
+  const response = await fetch(`${API_BASE}/document-types`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify(input),
+  });
+  return parseJsonResponse<ChronicleDocumentType>(response);
+}
+
+/** Update a document type */
+export async function apiUpdateDocumentType(
+  id: string,
+  updates: Partial<Pick<ChronicleDocumentType, "label" | "description" | "active">>,
+): Promise<ChronicleDocumentType> {
+  const response = await fetch(`${API_BASE}/document-types/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify(updates),
+  });
+  return parseJsonResponse<ChronicleDocumentType>(response);
+}
+
+/** Save / update type fingerprint (learned classification patterns) */
+export async function apiSaveTypeFingerprint(
+  typeId: string,
+  fingerprint: Partial<Pick<ChronicleTypeFingerprint, "phrases" | "companies" | "filenamePatterns" | "sampleDocumentIds">>,
+): Promise<ChronicleTypeFingerprint> {
+  const response = await fetch(`${API_BASE}/document-types/${typeId}/fingerprint`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify(fingerprint),
+  });
+  return parseJsonResponse<ChronicleTypeFingerprint>(response);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2: Enhanced review — reclassify / type assignment
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function apiReclassifyDocument(
+  docId: string,
+  payload: {
+    documentType: string;
+    notes?: string;
+    saveAsFingerprint?: boolean;
+    createNewType?: boolean;
+    newTypeLabel?: string;
+  },
+): Promise<ArchiveDocument> {
+  const response = await fetch(`${API_BASE}/review-queue/${docId}/reclassify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify(payload),
+  });
+  return parseJsonResponse<ArchiveDocument>(response);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2: Metadata search
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface MetaSearchFilters {
+  person?: string;
+  company?: string;
+  location?: string;
+  referenceNumber?: string;
+  sourceName?: string;
+  documentType?: string;
+  keyword?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function apiSearchByMetadata(filters: MetaSearchFilters): Promise<{
+  documents: ArchiveDocument[];
+  total: number;
+  limit: number;
+  offset: number;
+}> {
+  const params = new URLSearchParams();
+  if (filters.person) params.set("person", filters.person);
+  if (filters.company) params.set("company", filters.company);
+  if (filters.location) params.set("location", filters.location);
+  if (filters.referenceNumber) params.set("referenceNumber", filters.referenceNumber);
+  if (filters.sourceName) params.set("sourceName", filters.sourceName);
+  if (filters.documentType) params.set("documentType", filters.documentType);
+  if (filters.keyword) params.set("keyword", filters.keyword);
+  if (filters.limit) params.set("limit", String(filters.limit));
+  if (filters.offset) params.set("offset", String(filters.offset));
+
+  const response = await fetch(`${API_BASE}/documents/search-meta?${params.toString()}`, {
+    headers: getAuthHeaders(),
+  });
+  return parseJsonResponse(response);
 }

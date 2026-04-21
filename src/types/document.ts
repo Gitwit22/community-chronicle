@@ -324,6 +324,32 @@ export interface ArchiveDocument {
   needsReview: boolean;
   /** AI-generated summary */
   aiSummary: string;
+
+  // --- Phase 2: Lightweight search-first metadata ---
+  /** Canonical document type key (from registry) */
+  documentType?: string | null;
+  /** Who issued / sent the document */
+  sourceName?: string | null;
+  /** Date extracted from document content */
+  documentDate?: string | null;
+  /** Person names extracted from document */
+  metaPeople?: string[];
+  /** Company / organisation names extracted */
+  metaCompanies?: string[];
+  /** Location strings extracted */
+  metaLocations?: string[];
+  /** Reference numbers (invoice #, grant #, etc.) */
+  metaReferenceNumbers?: string[];
+  /** Catch-all notable items (amounts, emails, flags) */
+  metaOther?: string[];
+  /** Classification status */
+  classificationStatus?: DocumentClassificationStatus | null;
+  /** How classification was determined */
+  classificationMatchedBy?: ClassificationMatchedBy | null;
+  /** Classification confidence score (0–1) */
+  classificationConfidence?: number | null;
+  /** True when document type is other_unclassified or confidence is low */
+  reviewRequired?: boolean;
 }
 
 /** A single audit trail event */
@@ -397,6 +423,124 @@ export interface SearchIndexFields {
   dateTokens: string[];
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2: Lightweight search-first metadata model
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** System document types — the canonical classification set */
+export const SYSTEM_DOC_TYPES = [
+  "invoice",
+  "receipt",
+  "letter",
+  "form",
+  "sign_in_sheet",
+  "business_card",
+  "report",
+  "notice",
+  "other_unclassified",
+] as const;
+
+export type SystemDocType = typeof SYSTEM_DOC_TYPES[number];
+
+export const SYSTEM_DOC_TYPE_LABELS: Record<SystemDocType, string> = {
+  invoice:             "Invoice",
+  receipt:             "Receipt / Acknowledgment",
+  letter:              "Letter / Correspondence",
+  form:                "Form / Application",
+  sign_in_sheet:       "Sign-In Sheet / Roster",
+  business_card:       "Business Card",
+  report:              "Report / Study",
+  notice:              "Notice / Government Document",
+  other_unclassified:  "Other (Unclassified)",
+};
+
+/**
+ * Status of the auto-classification attempt.
+ *   known               — matched a system or custom type with sufficient confidence
+ *   other_unclassified  — no confident match; needs admin review
+ *   reviewed_mapped     — admin has manually assigned a type
+ *   promoted_custom_type — admin reviewed + created a new custom type from this doc
+ */
+export type DocumentClassificationStatus =
+  | "known"
+  | "other_unclassified"
+  | "reviewed_mapped"
+  | "promoted_custom_type";
+
+/** How the classification was determined */
+export type ClassificationMatchedBy =
+  | "rule"
+  | "keyword"
+  | "source"
+  | "fingerprint"
+  | "manual";
+
+/**
+ * Lightweight searchable metadata extracted from every document.
+ * Replaces the heavy schema-based extraction for the default intake flow.
+ */
+export interface LightweightDocumentMetadata {
+  /** Canonical document type key (system or custom) */
+  documentType: string | null;
+  /** Who issued / sent the document */
+  sourceName: string | null;
+  /** Date extracted from the document (ISO string or human-readable) */
+  documentDate: string | null;
+  /** Person names found in the document */
+  people: string[];
+  /** Company / organisation names found in the document */
+  companies: string[];
+  /** Location strings (city, state, address) */
+  locations: string[];
+  /** Invoice numbers, grant IDs, case numbers, etc. */
+  referenceNumbers: string[];
+  /** Anything notable that doesn't fit the above buckets */
+  other: string[];
+  /** Per-field extraction confidence */
+  confidence?: {
+    documentType?: number;
+    sourceName?: number;
+    documentDate?: number;
+  };
+}
+
+/**
+ * Extracted entity — flattened representation useful for search chips.
+ */
+export interface ExtractedEntity {
+  type: "person" | "company" | "date" | "document_type" | "source" | "title" | "reference_number" | "location" | "other";
+  value: string;
+  confidence?: number;
+}
+
+/** A document type in the registry (system or admin-created custom) */
+export interface ChronicleDocumentType {
+  id: string;
+  organizationId: string;
+  programDomain: string;
+  key: string;
+  label: string;
+  description: string;
+  isSystemType: boolean;
+  isUserCreated: boolean;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  fingerprint?: ChronicleTypeFingerprint | null;
+}
+
+/** Learned classification patterns for a document type */
+export interface ChronicleTypeFingerprint {
+  id: string;
+  documentTypeId: string;
+  phrases: string[];
+  companies: string[];
+  filenamePatterns: string[];
+  datePatterns: string[];
+  sampleDocumentIds: string[];
+  updatedAt: string;
+}
+
 /**
  * Input for creating a new document through any intake method.
  * Only requires minimal fields; the pipeline fills in the rest.
@@ -434,6 +578,23 @@ export interface DocumentFilters {
   tags?: string[];
   dateFrom?: string;
   dateTo?: string;
+  // Phase 2: lightweight metadata filters
+  /** Filter by canonical document type key (invoice, receipt, etc.) */
+  documentType?: string;
+  /** Filter by source/issuer name (partial match) */
+  sourceName?: string;
+  /** Filter by person name found in document (partial match) */
+  person?: string;
+  /** Filter by company name found in document (partial match) */
+  company?: string;
+  /** Filter by location string (partial match) */
+  location?: string;
+  /** Filter by reference number (partial match) */
+  referenceNumber?: string;
+  /** Filter: show only documents requiring review */
+  reviewRequired?: boolean;
+  /** Filter by classification status */
+  classificationStatus?: DocumentClassificationStatus;
 }
 
 /** Paginated result set */

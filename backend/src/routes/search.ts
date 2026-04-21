@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import prisma from "../db.js";
+import type { Prisma } from "@prisma/client";
 
 const router = express.Router();
 const NXTLVL_API_URL = process.env.NXTLVL_API_URL || "http://localhost:4000";
@@ -53,18 +54,21 @@ router.post("/documents/search", async (req: Request, res: Response) => {
     }
 
     // Local search implementation
-    const where: any = {
-      organizationId,
-      searchText: {
-        search: q.split(" ").join(" | "),
-      },
+    const where: Prisma.DocumentWhereInput = {
+      OR: [
+        { title: { contains: q, mode: "insensitive" } },
+        { description: { contains: q, mode: "insensitive" } },
+        { author: { contains: q, mode: "insensitive" } },
+        { extractedText: { contains: q, mode: "insensitive" } },
+      ],
     };
 
     if (classification) {
-      where.classification = classification;
+      // Local DB stores document type in `type`; external API may call it classification.
+      where.type = classification;
     }
     if (status) {
-      where.status = status;
+      where.processingStatus = status;
     }
     if (startDate || endDate) {
       where.createdAt = {};
@@ -83,17 +87,15 @@ router.post("/documents/search", async (req: Request, res: Response) => {
         where,
         select: {
           id: true,
-          fileName: true,
+          originalFileName: true,
           title: true,
-          classification: true,
+          type: true,
           status: true,
-          confidence: true,
-          fileType: true,
+          processingStatus: true,
+          mimeType: true,
           fileSize: true,
           createdAt: true,
-          uploadedBy: {
-            select: { displayName: true, email: true },
-          },
+          uploadedById: true,
         },
         orderBy: { createdAt: "desc" },
         take: limit,
@@ -104,18 +106,13 @@ router.post("/documents/search", async (req: Request, res: Response) => {
 
     const executionMs = Date.now() - startTime;
 
-    // Log search for analytics
-    await prisma.searchLog.create({
-      data: {
-        organizationId,
-        query: q,
-        resultCount: documents.length,
-        executionMs,
-      },
-    });
-
     res.json({
-      documents,
+      documents: documents.map((doc) => ({
+        ...doc,
+        fileName: doc.originalFileName,
+        classification: doc.type,
+        fileType: doc.mimeType,
+      })),
       total,
       limit,
       offset,
@@ -151,23 +148,28 @@ router.get("/classifications", async (req: Request, res: Response) => {
     }
 
     // Local implementation
-    const classifications = await prisma.document.groupBy({
-      by: ["classification"],
+    const classificationRows = await prisma.document.findMany({
       where: {
-        organizationId,
-        classification: { not: null },
+        type: { not: "" },
       },
-      _count: {
-        id: true,
+      select: {
+        type: true,
       },
-      orderBy: { _count: { id: "desc" } },
     });
 
-    const result = classifications.map((c) => ({
-      label: c.classification || "Unknown",
-      value: c.classification,
-      count: c._count.id,
-    }));
+    const classificationCounts = classificationRows.reduce<Record<string, number>>((acc, row) => {
+      const key = row.type || "unknown";
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    const result = Object.entries(classificationCounts)
+      .map(([value, count]) => ({
+        label: value || "Unknown",
+        value,
+        count,
+      }))
+      .sort((a, b) => b.count - a.count);
 
     res.json(result);
   } catch (error) {
@@ -200,26 +202,32 @@ router.get("/statistics", async (req: Request, res: Response) => {
     }
 
     // Local implementation
-    const [totalDocuments, byStatus, byClassification] = await Promise.all([
-      prisma.document.count({ where: { organizationId } }),
-      prisma.document.groupBy({
-        by: ["status"],
-        where: { organizationId },
-        _count: { id: true },
-      }),
-      prisma.document.groupBy({
-        by: ["classification"],
-        where: { organizationId },
-        _count: { id: true },
+    const [totalDocuments, rows] = await Promise.all([
+      prisma.document.count(),
+      prisma.document.findMany({
+        select: {
+          status: true,
+          type: true,
+        },
       }),
     ]);
 
+    const byStatus = rows.reduce<Record<string, number>>((acc, row) => {
+      const key = row.status ?? "unknown";
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    const byClassification = rows.reduce<Record<string, number>>((acc, row) => {
+      const key = row.type || "unclassified";
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+
     res.json({
       totalDocuments,
-      byStatus: Object.fromEntries(byStatus.map((s) => [s.status, s._count.id])),
-      byClassification: Object.fromEntries(
-        byClassification.map((c) => [c.classification || "unclassified", c._count.id])
-      ),
+      byStatus,
+      byClassification,
     });
   } catch (error) {
     console.error("Statistics error:", error);
