@@ -23,7 +23,6 @@ import {
   apiUploadMultipleFiles,
   apiUploadSingleFile,
 } from "@/services/apiDocuments";
-import { detectDuplicates } from "@/services/duplicateDetectionService";
 import { classifyAndExtractBySchema, type RoutedExtractionResult } from "@/services/extractionRoutingService";
 
 const QUERY_KEYS = {
@@ -539,18 +538,6 @@ export function useResolveReview() {
       resolution: ReviewMetadata["resolution"];
       notes?: string;
     }) => apiResolveReview(docId, resolution, notes),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["documents"] });
-    },
-  });
-}
-
-/** Hook: Run duplicate detection */
-export function useDetectDuplicates() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ docId, file }: { docId: string; file?: File }) =>
-      detectDuplicates(docId, file),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
