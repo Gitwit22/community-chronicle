@@ -50,16 +50,16 @@ const DocumentDetail = ({
     setRerunType(((document?.extraction?.documentType ?? "unknown_document") as ExtractionDocumentType));
   }, [document]);
 
+  const structuredExtractionFields = useMemo(
+    () => localDocument?.extraction?.extractedData ?? {},
+    [localDocument?.extraction?.extractedData],
+  );
+
   if (!localDocument) return null;
 
   const activeDocument = localDocument;
 
   const canOpenFile = Boolean(activeDocument.fileUrl);
-
-  const structuredExtractionFields = useMemo(
-    () => activeDocument.extraction?.extractedData ?? {},
-    [activeDocument.extraction?.extractedData],
-  );
 
   const handleDownload = async () => {
     const ok = await downloadDocument(activeDocument.fileUrl, activeDocument.originalFileName ?? activeDocument.title);
