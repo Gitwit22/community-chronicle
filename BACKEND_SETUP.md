@@ -1,192 +1,58 @@
-# Community Chronicle Backend Setup
+# Community Chronicle Backend Setup (Legacy)
 
-## Overview
+## Status
 
-Community Chronicle now has a lightweight backend that:
-- **Provides search functionality** with document filtering and classification
-- **Proxies storage requests to nxt-lvl-api** for bucket access (community-chronicle bucket)
-- **Works with optional local database** for search analytics (Postgres)
+The in-repo backend path is **deprecated for production**.
 
-## Architecture
+Production and staging Community Chronicle traffic must target the platform API (`nxt-lvl-api`) directly. Do not deploy or route user traffic through the legacy `community-chronicle/backend` server.
+
+## Supported Runtime Architecture
 
 ```
 Community Chronicle Frontend
     ↓
-Community Chronicle Backend (Port 5000)
-    ├─ /api/documents/search → Forward to nxt-lvl-api OR query local DB
-    ├─ /api/classifications → Forward to nxt-lvl-api OR query local DB
-    ├─ /api/statistics → Forward to nxt-lvl-api OR query local DB
-    └─ /api/documents/* → Proxy to nxt-lvl-api
-    
-nxt-lvl-api (Port 4000)
-    └─ /api/docs/* → Document storage & R2 bucket access
+nxt-lvl-api
+    ├─ /api/documents/*
+    ├─ /api/review-queue*
+    ├─ /api/org/*
+    └─ /api/docs/* (storage)
 ```
 
-## Installation
+## Required Frontend Variables
 
-### 1. Install Dependencies
+Use the canonical platform-hosted API values:
 
-```bash
-cd community-chronicle
-npm install
-```
-
-### 2. Setup Environment
-
-Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
-```
-
-Update `.env`:
 ```env
-PORT=5000
-NXTLVL_API_URL=http://localhost:4000
-CORS_ORIGIN=http://localhost:8080
-NODE_ENV=development
+VITE_API_BASE_URL=https://api.nxtlvl.app/api
+VITE_PLATFORM_API_URL=https://api.nxtlvl.app
 ```
 
-### 3. Optional: Local Search Database
+For local development against local platform API:
 
-If you want search analytics stored locally:
 ```env
-DATABASE_URL=postgresql://user:password@localhost:5432/community_chronicle
+VITE_API_BASE_URL=http://localhost:4000/api
+VITE_PLATFORM_API_URL=http://localhost:4000
 ```
 
-Then setup Prisma:
-```bash
-npm run prisma:generate
-npm run prisma:push
-```
+## Legacy Backend Scope (Local Troubleshooting Only)
 
-## Running the Backend
+The legacy backend can be used only for local debugging of old flows and should be treated as archival tooling.
 
-### Development
+- No production support
+- No schema compatibility guarantees
+- No stability guarantees with current Prisma/runtime contracts
 
-```bash
-# Terminal 1: Community Chronicle Backend
-npm run dev:backend
+If you must run it locally, isolate it from production data and expect drift.
 
-# Terminal 2: Community Chronicle Frontend
-npm run dev
+## Production Verification Checklist
 
-# Terminal 3: Full stack (optional)
-npm run dev:full
-```
+1. Confirm health on Render origin: `GET /api/health`
+2. Confirm authenticated reads: `GET /api/documents`, `GET /api/review-queue`
+3. Confirm uploads route to platform API only
+4. Confirm no custom-domain cutover until TLS and DNS checks are green
 
-### Production
+## Related Files
 
-```bash
-npm run build:backend
-npm run build
-```
-
-## API Endpoints
-
-### Search Operations
-
-**POST `/api/documents/search`**
-- Search documents with filters
-- Request: `{ q: string, organizationId: string, classification?: string, status?: string }`
-- Returns: `{ documents: [], total: number, executionMs: number }`
-
-**GET `/api/classifications?organizationId=:id`**
-- Get available document classifications
-- Returns: `[{ label: string, value: string, count: number }]`
-
-**GET `/api/statistics?organizationId=:id`**
-- Get document statistics
-- Returns: `{ totalDocuments: number, byStatus: {}, byClassification: {} }`
-
-### Document Operations (Proxied to nxt-lvl-api)
-
-**POST `/api/documents/upload`**
-- Upload a document
-- Proxies to: `POST /api/docs/upload`
-
-**GET `/api/documents/:id`**
-- Get document details
-- Proxies to: `GET /api/docs/:id`
-
-**POST `/api/documents/upload/batch`**
-- Batch upload documents
-- Proxies to: `POST /api/docs/upload/batch`
-
-## Database Schema (Optional)
-
-If using local database, the schema includes:
-- `Organization` - Organization records
-- `User` - User records
-- `Document` - Document metadata with full-text search
-- `SearchLog` - Search analytics
-
-## How It Works
-
-### Without Local Database
-- Returns requests to search endpoints without storing data
-- All data comes from nxt-lvl-api
-
-### With Local Database
-- Search logs are stored locally for analytics
-- Document metadata can be indexed locally for faster searches
-- Requires Prisma migrations to be run
-
-## Environment Variables Reference
-
-| Variable | Purpose | Example |
-|----------|---------|---------|
-| `PORT` | Backend server port | `5000` |
-| `NXTLVL_API_URL` | Address of nxt-lvl-api | `http://localhost:4000` |
-| `CORS_ORIGIN` | Allowed CORS origins | `http://localhost:8080` |
-| `NODE_ENV` | Environment | `development` |
-| `DATABASE_URL` | Optional Postgres URL | `postgresql://...` |
-
-## Storage Configuration
-
-Storage is configured in **nxt-lvl-api** using the **community-chronicle** bucket:
-- Provider: R2 (Cloudflare)
-- Bucket: `community-chronicle`
-- Path prefix: `org/{organizationId}/documents/{fileId}`
-
-## Troubleshooting
-
-### Backend won't start
-```bash
-# Check if port 5000 is available
-lsof -i :5000
-
-# Check if nxt-lvl-api is running on 4000
-curl http://localhost:4000/api/health
-```
-
-### Search not working
-- Ensure `NXTLVL_API_URL` points to running nxt-lvl-api
-- Check browser console for CORS errors
-- Verify auth token is being passed correctly
-
-### Database issues
-```bash
-# Reset Prisma
-npm run prisma:push -- --skip-generate
-npm run prisma:generate
-```
-
-## Development
-
-### Build TypeScript
-```bash
-npm run build:backend
-```
-
-### Type Checking
-```bash
-tsc --project tsconfig.backend.json --noEmit
-```
-
-## Next Steps
-
-1. Set up nxt-lvl-api with community-chronicle bucket
-2. Configure R2 credentials in nxt-lvl-api
-3. Run migrations if using local database
-4. Test search via API endpoints
-5. Integrate DocumentSearch component into main app
+- `src/lib/apiBase.ts`
+- `wrangler.toml`
+- `.env.example`

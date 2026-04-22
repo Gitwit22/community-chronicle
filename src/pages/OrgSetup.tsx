@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useAuth } from "@/context/AuthContext";
+import { API_BASE } from "@/lib/apiBase";
 
 interface SetupForm {
   organizationName: string;
@@ -41,8 +42,6 @@ export default function OrgSetup() {
   const navigate = useNavigate();
   const { user, token, refreshSession, logout } = useAuth();
   const [form, setForm] = useState<SetupForm>(INITIAL);
-
-  const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -41,7 +41,6 @@ function buildQuery(filters: DocumentFilters): string {
   if (filters.company) params.set("company", filters.company);
   if (filters.location) params.set("location", filters.location);
   if (filters.referenceNumber) params.set("referenceNumber", filters.referenceNumber);
-  if (filters.reviewRequired !== undefined) params.set("reviewRequired", String(filters.reviewRequired));
   if (filters.classificationStatus) params.set("classificationStatus", filters.classificationStatus);
 
   const query = params.toString();

@@ -1,6 +1,5 @@
 import { getAuthHeaders } from "@/lib/tokenStorage";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
+import { API_BASE } from "@/lib/apiBase";
 
 function apiOrigin(): string | null {
   if (!API_BASE.startsWith("http://") && !API_BASE.startsWith("https://")) {

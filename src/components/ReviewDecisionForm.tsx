@@ -17,6 +17,7 @@ import { CheckCircle2, XCircle, RefreshCw, Copy, Edit, Tag, Plus, AlertTriangle 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { ArchiveDocument, ChronicleDocumentType, ReviewMetadata } from "@/types/document";
+import { isDocumentUnclassified } from "@/lib/reviewState";
 import { getDocumentTypeLabel } from "@/services/documentTypeClassifier";
 import { useDocumentTypes, useReclassifyDocument, useResolveReview } from "@/hooks/useDocuments";
 
@@ -46,10 +47,7 @@ const ReviewDecisionForm = ({ document, onResolve, onDismiss, onCancel }: Review
   const [notes, setNotes] = useState("");
 
   // Reclassification state (shown when doc is other_unclassified or user picks "Reclassify" mode)
-  const isUnclassified =
-    document.classificationStatus === "other_unclassified" ||
-    document.documentType === "other_unclassified" ||
-    document.reviewRequired === true;
+  const isUnclassified = isDocumentUnclassified(document);
 
   const [showReclassify, setShowReclassify] = useState(isUnclassified);
   const [selectedType, setSelectedType] = useState<string>(document.documentType ?? "");

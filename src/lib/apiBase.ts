@@ -17,7 +17,13 @@ function getDefaultApiBaseUrl() {
     return "/api";
   }
 
-  if (host === "nltops.com" || host.endsWith(".nltops.com") || host.endsWith(".ntlops.com") || host.endsWith(".pages.dev")) {
+  if (
+    host === "nltops.com" ||
+    host.endsWith(".nltops.com") ||
+    host.endsWith(".ntlops.com") ||
+    host.endsWith(".pages.dev") ||
+    host.endsWith(".onrender.com")
+  ) {
     return DEFAULT_HOSTED_API_BASE_URL;
   }
 

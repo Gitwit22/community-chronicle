@@ -4,6 +4,7 @@ import ProcessingStatusBadge from "@/components/ProcessingStatusBadge";
 import type { ArchiveDocument } from "@/types/document";
 import { MONTH_NAMES_SHORT } from "@/types/document";
 import { downloadDocument } from "@/lib/documentActions";
+import { isDocumentPendingReview, isDocumentUnclassified } from "@/lib/reviewState";
 import { getDocumentTypeLabel } from "@/services/documentTypeClassifier";
 
 interface DocumentCardProps {
@@ -28,11 +29,8 @@ const DocumentCard = ({
   onDelete,
 }: DocumentCardProps) => {
   const isDuplicate = document.duplicateCheck?.duplicateStatus === "possible_duplicate";
-  const needsReview = document.review?.required && !document.review?.resolution;
-  const isUnclassified =
-    document.documentType === "other_unclassified" ||
-    document.classificationStatus === "other_unclassified" ||
-    document.reviewRequired === true;
+  const needsReview = isDocumentPendingReview(document);
+  const isUnclassified = isDocumentUnclassified(document);
 
   return (
     <div

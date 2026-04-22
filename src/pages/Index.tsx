@@ -27,6 +27,7 @@ import ReviewQueuePanel from "@/components/ReviewQueuePanel";
 import StorageSettingsPanel from "@/components/StorageSettingsPanel";
 import { useBulkDeleteDocuments, useDeleteDocument, useDocuments, useDocumentYears, useBulkReprocess, useResolveReview, useRetryProcessing, useReviewQueue } from "@/hooks/useDocuments";
 import { PROGRAM_DISPLAY_NAME, PROGRAM_SYSTEM_NAME } from "@/lib/programInfo";
+import { isDocumentPendingReview } from "@/lib/reviewState";
 import type { ArchiveDocument, ReviewMetadata } from "@/types/document";
 import { toast } from "sonner";
 
@@ -164,12 +165,7 @@ const Index = () => {
 
       // Phase 2: needs review
       if (filters.reviewRequired) {
-        const isUnclassified =
-          doc.documentType === "other_unclassified" ||
-          doc.classificationStatus === "other_unclassified" ||
-          doc.reviewRequired === true;
-        const needsReview = doc.review?.required && !doc.review?.resolution;
-        if (!isUnclassified && !needsReview) return false;
+        if (!isDocumentPendingReview(doc)) return false;
       }
 
       if (filters.processingStatus) {
