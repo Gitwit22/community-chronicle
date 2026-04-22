@@ -389,6 +389,30 @@ export interface ExtractionMetadata {
   rawParseResponse?: unknown;
   /** True when unknown/fallback path was used */
   fallbackPathUsed?: boolean;
+  /** Lightweight prediction snapshot saved before deep extraction */
+  typePrediction?: DocumentTypePrediction;
+  /** Manual override applied at rerun time */
+  rerunManualOverride?: string | null;
+  /** Final forced document type for queued rerun */
+  forcedDocumentType?: string | null;
+}
+
+export interface DocumentTypePredictionCandidate {
+  type: string;
+  label: string;
+  confidence: number;
+  reasons: string[];
+}
+
+export interface DocumentTypePrediction {
+  predictedType: string;
+  confidence: number;
+  confidenceBand: "high" | "medium" | "low";
+  sourceName: string | null;
+  pageCount: number;
+  firstPageSnippet: string;
+  candidates: DocumentTypePredictionCandidate[];
+  layoutHints: string[];
 }
 
 /** Duplicate detection metadata */

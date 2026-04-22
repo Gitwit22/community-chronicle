@@ -2,6 +2,7 @@ import type {
   ArchiveDocument,
   ChronicleDocumentType,
   ChronicleTypeFingerprint,
+  DocumentTypePrediction,
   DocumentFilters,
   DocumentIntakeInput,
   ReviewMetadata,
@@ -243,6 +244,40 @@ export async function apiBulkReprocess(ids?: string[]): Promise<{ queued: number
   });
 
   return parseJsonResponse<{ queued: number; documentIds: string[] }>(response);
+}
+
+export interface RetryWithTypeResponse {
+  document: ArchiveDocument;
+  prediction: DocumentTypePrediction;
+  selectedType: string;
+  routeDecision: "manual_override" | "auto_high_confidence" | "low_confidence_fallback";
+  trainingSaved: boolean;
+}
+
+export async function apiRetryWithType(
+  id: string,
+  payload: {
+    overrideDocumentType?: string;
+    saveAsTraining?: boolean;
+  },
+): Promise<RetryWithTypeResponse> {
+  const response = await fetch(`${API_BASE}/documents/${id}/retry-with-type`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({} as Record<string, unknown>));
+    const message =
+      typeof body.error === "string"
+        ? body.error
+        : `Request failed with status ${response.status}`;
+    const actionable = typeof body.actionable === "string" ? body.actionable : "";
+    throw new Error(actionable ? `${message} ${actionable}` : message);
+  }
+
+  return (await response.json()) as RetryWithTypeResponse;
 }
 
 export async function apiGetReviewQueue(): Promise<ArchiveDocument[]> {

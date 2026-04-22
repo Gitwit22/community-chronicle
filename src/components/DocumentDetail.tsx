@@ -12,8 +12,7 @@ import {
   EXTRACTION_DOCUMENT_TYPES,
   type ExtractionDocumentType,
 } from "@/config/extractionSchemas";
-import { classifyAndExtractBySchema } from "@/services/extractionRoutingService";
-import { apiUpdateDocument } from "@/services/apiDocuments";
+import { apiRetryWithType } from "@/services/apiDocuments";
 
 interface DocumentDetailProps {
   document: ArchiveDocument | null;
@@ -71,7 +70,12 @@ const DocumentDetail = ({
   const handleOpenOriginal = async () => {
     const ok = await openOriginalDocument(activeDocument.fileUrl);
     if (!ok) {
-      toast.error("No original file is available for this record.");
+      const downloaded = await downloadDocument(activeDocument.fileUrl, activeDocument.originalFileName ?? activeDocument.title);
+      if (downloaded) {
+        toast.warning("Could not open inline preview. Downloaded the original file instead.");
+        return;
+      }
+      toast.error("Unable to open the original file. Verify file availability and authentication.");
     }
   };
 
@@ -92,65 +96,26 @@ const DocumentDetail = ({
 
     setIsRerunning(true);
     try {
-      const response = await fetch(activeDocument.fileUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to load original file (${response.status})`);
-      }
-
-      const blob = await response.blob();
-      const filename = activeDocument.originalFileName || `${activeDocument.title || "document"}.bin`;
-      const file = new File([blob], filename, { type: blob.type || activeDocument.mimeType || "application/octet-stream" });
-
-      const routed = await classifyAndExtractBySchema(file, {
-        overrideDocumentType: rerunType,
+      const override = rerunType === "unknown_document" ? undefined : rerunType;
+      const result = await apiRetryWithType(activeDocument.id, {
+        overrideDocumentType: override,
+        saveAsTraining: Boolean(override),
       });
 
-      const lowConfidence = routed.classificationConfidence > 0 && routed.classificationConfidence < 0.6;
-      const updates: Partial<ArchiveDocument> = {
-        classificationResult: {
-          category: activeDocument.classificationResult?.category ?? "Uncategorized",
-          confidence: routed.classificationConfidence,
-          method: "ai_assisted",
-          provider: "core-api",
-          documentType: routed.documentType,
-          reasoning: routed.rawClassificationResponse.reasoning,
-          suggestedTags: activeDocument.classificationResult?.suggestedTags ?? [],
-          coreApi: {
-            provider: "core-api",
-            status: routed.rawClassificationResponse.status,
-            documentType: routed.documentType,
-            confidence: routed.classificationConfidence,
-            reasoning: routed.rawClassificationResponse.reasoning,
-            jobId: null,
-            decision: lowConfidence ? "needs_review" : "auto_accepted",
-            classifiedAt: new Date().toISOString(),
-          },
-        },
-        extraction: {
-          ...activeDocument.extraction,
-          status: routed.rawExtractionResponse.status === "failed" ? "failed" : "complete",
-          method: "llama_cloud",
-          confidence: routed.classificationConfidence,
-          extractedAt: new Date().toISOString(),
-          documentType: routed.documentType,
-          classificationConfidence: routed.classificationConfidence,
-          schemaUsed: routed.schemaUsed,
-          extractedData: routed.extractedData,
-          rawExtractionResponse: routed.rawExtractionResponse,
-          rawParsedText: routed.rawParsedText,
-          rawParseResponse: routed.rawParseResponse,
-          fallbackPathUsed: routed.fallbackPathUsed,
-          warningMessages: routed.fallbackPathUsed ? ["Used unknown_document fallback path"] : undefined,
-        },
-        extractedText: routed.rawParsedText || activeDocument.extractedText,
-      };
+      setLocalDocument(result.document);
+      onDocumentUpdated?.(result.document);
 
-      const updated = await apiUpdateDocument(activeDocument.id, updates);
-      setLocalDocument(updated);
-      onDocumentUpdated?.(updated);
-      toast.success("Extraction re-run complete.");
+      const confidencePct = Math.round((result.prediction.confidence ?? 0) * 100);
+      if (result.routeDecision === "manual_override") {
+        toast.success(`Re-run queued with manual type '${result.selectedType}'.${result.trainingSaved ? " Training evidence saved." : ""}`);
+      } else if (result.routeDecision === "auto_high_confidence") {
+        toast.success(`Re-run queued with auto-detected type '${result.selectedType}' (${confidencePct}% confidence).`);
+      } else {
+        toast.warning(`Re-run queued to fallback type '${result.selectedType}' (${confidencePct}% confidence). Review may be required.`);
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to re-run extraction.");
+      const message = error instanceof Error ? error.message : "Failed to re-run extraction.";
+      toast.error(message);
     } finally {
       setIsRerunning(false);
     }
@@ -296,6 +261,27 @@ const DocumentDetail = ({
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-red-600">
                   <AlertTriangle className="h-3 w-3" />
                   {activeDocument.extraction.errorMessage}
+                </div>
+              )}
+
+              {activeDocument.extraction.typePrediction && (
+                <div className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground space-y-1">
+                  <p className="uppercase tracking-wider">Pre-Extraction Type Prediction</p>
+                  <p>
+                    Predicted: <span className="text-foreground font-medium">{activeDocument.extraction.typePrediction.predictedType}</span>
+                    {" "}({Math.round((activeDocument.extraction.typePrediction.confidence ?? 0) * 100)}% • {activeDocument.extraction.typePrediction.confidenceBand})
+                  </p>
+                  {activeDocument.extraction.typePrediction.sourceName && (
+                    <p>Source clue: <span className="text-foreground">{activeDocument.extraction.typePrediction.sourceName}</span></p>
+                  )}
+                  {activeDocument.extraction.typePrediction.candidates?.length > 0 && (
+                    <p>
+                      Candidates: {activeDocument.extraction.typePrediction.candidates
+                        .slice(0, 3)
+                        .map((c) => `${c.type} (${Math.round(c.confidence * 100)}%)`)
+                        .join(" • ")}
+                    </p>
+                  )}
                 </div>
               )}
 
