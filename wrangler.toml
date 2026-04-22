@@ -12,9 +12,9 @@ compatibility_flags = ["nodejs_compat"]
 # Production environment
 # ---------------------------------------------------------------------------
 [env.production]
-vars = { ENVIRONMENT = "production" }
 
 [env.production.vars]
+ENVIRONMENT                                    = "production"
 VITE_API_BASE_URL                              = "https://api.nxtlvl.app/api"
 VITE_SUITE_URL                                 = "https://suite.nxtlvl.app"
 VITE_DOC_INTEL_API_URL                         = "https://doc-intel.nxtlvl.app"
@@ -39,9 +39,9 @@ VITE_LLAMA_SCHEMA_UNKNOWN_DOCUMENT             = "cfg-b6cwlmqsr1zfwyrw70wewn04so
 # Staging environment
 # ---------------------------------------------------------------------------
 [env.staging]
-vars = { ENVIRONMENT = "staging" }
 
 [env.staging.vars]
+ENVIRONMENT                                    = "staging"
 VITE_API_BASE_URL                              = "https://staging-api.nxtlvl.app/api"
 VITE_SUITE_URL                                 = "https://staging-suite.nxtlvl.app"
 VITE_DOC_INTEL_API_URL                         = "https://staging-doc-intel.nxtlvl.app"
@@ -62,9 +62,9 @@ VITE_LLAMA_SCHEMA_UNKNOWN_DOCUMENT             = "cfg-b6cwlmqsr1zfwyrw70wewn04so
 # Preview / development environment
 # ---------------------------------------------------------------------------
 [env.preview]
-vars = { ENVIRONMENT = "preview" }
 
 [env.preview.vars]
+ENVIRONMENT                                    = "preview"
 VITE_API_BASE_URL                              = "http://localhost:4000/api"
 VITE_SUITE_URL                                 = "http://localhost:3000"
 VITE_DOC_INTEL_API_URL                         = "http://localhost:4010"
