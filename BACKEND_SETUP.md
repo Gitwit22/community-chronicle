@@ -20,12 +20,14 @@ nxt-lvl-api
 
 ## Required Frontend Variables
 
-Use the canonical platform-hosted API values:
+Use the Render-hosted API (current supported production endpoint):
 
 ```env
-VITE_API_BASE_URL=https://api.nxtlvl.app/api
-VITE_PLATFORM_API_URL=https://api.nxtlvl.app
+VITE_API_BASE_URL=https://community-chronicle.onrender.com/api
+VITE_PLATFORM_API_URL=https://community-chronicle.onrender.com
 ```
+
+A branded API domain (`api.nxtlvl.app`) can be reintroduced as an optional infra improvement once TLS/DNS is confirmed green. Until then, use the Render host directly.
 
 For local development against local platform API:
 
@@ -46,10 +48,9 @@ If you must run it locally, isolate it from production data and expect drift.
 
 ## Production Verification Checklist
 
-1. Confirm health on Render origin: `GET /api/health`
+1. Confirm health: `GET https://community-chronicle.onrender.com/api/health`
 2. Confirm authenticated reads: `GET /api/documents`, `GET /api/review-queue`
 3. Confirm uploads route to platform API only
-4. Confirm no custom-domain cutover until TLS and DNS checks are green
 
 ## Related Files
 

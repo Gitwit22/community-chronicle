@@ -15,8 +15,8 @@ compatibility_flags = ["nodejs_compat"]
 
 [env.production.vars]
 ENVIRONMENT                                    = "production"
-VITE_API_BASE_URL                              = "https://api.nxtlvl.app/api"
-VITE_PLATFORM_API_URL                          = "https://api.nxtlvl.app"
+VITE_API_BASE_URL                              = "https://community-chronicle.onrender.com/api"
+VITE_PLATFORM_API_URL                          = "https://community-chronicle.onrender.com"
 VITE_SUITE_URL                                 = "https://suite.nxtlvl.app"
 VITE_DOC_INTEL_API_URL                         = "https://doc-intel.nxtlvl.app"
 VITE_DOC_TYPE_CONFIDENCE_THRESHOLD             = "0.6"
