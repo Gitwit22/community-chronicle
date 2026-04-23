@@ -19,6 +19,7 @@ import {
   FileSearch,
   FolderCheck,
   Inbox,
+  ScanSearch,
 } from "lucide-react";
 import type { ProcessingStatus, DocumentLifecycleStatus } from "@/types/document";
 
@@ -51,6 +52,11 @@ const statusConfig: Record<
     label: "Processing",
     variant: "default",
     icon: Loader2,
+  },
+  intake_complete: {
+    label: "Scanning",
+    variant: "secondary",
+    icon: ScanSearch,
   },
   processed: {
     label: "Processed",

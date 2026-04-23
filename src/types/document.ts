@@ -11,6 +11,8 @@ export type ProcessingStatus =
   | "imported"
   | "queued"
   | "processing"
+  /** Lightweight filename-based intake ran; full extraction is in progress */
+  | "intake_complete"
   | "processed"
   | "failed"
   | "needs_review";
@@ -395,6 +397,10 @@ export interface ExtractionMetadata {
   rerunManualOverride?: string | null;
   /** Final forced document type for queued rerun */
   forcedDocumentType?: string | null;
+  /** Routing decision: how the system decided to handle this document after intake */
+  routeDecision?: "auto_extract" | "confirmation_required" | "generic_fallback" | "manual_override" | "unknown_waiting_for_type" | null;
+  /** ISO timestamp of when the intake step completed */
+  intakeTimestamp?: string;
 }
 
 export interface DocumentTypePredictionCandidate {
@@ -662,7 +668,7 @@ export function getDocumentDisplayStatus(doc: Pick<ArchiveDocument, "processingS
   if (ls === "archived") return "archived";
   if (ls === "review_required" || ps === "needs_review") return "review_required";
   if (ps === "failed" || ls === "failed") return "failed";
-  if (ps === "queued" || ps === "processing" || ls === "queued" || ls === "extracting") return "processing";
+  if (ps === "queued" || ps === "processing" || ps === "intake_complete" || ls === "queued" || ls === "extracting") return "processing";
   if (ps === "processed") return "done";
   return "intake";
 }

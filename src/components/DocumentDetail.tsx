@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Calendar, User, Tag, Download, Sparkles, ExternalLink, Clock, Info, AlertTriangle, Shield, Copy, Trash2, Brain, RefreshCw } from "lucide-react";
+import { FileText, Calendar, User, Tag, Download, Sparkles, ExternalLink, Clock, Info, AlertTriangle, Shield, Copy, Trash2, Brain, RefreshCw, ScanSearch } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -201,7 +201,67 @@ const DocumentDetail = ({
             </div>
           )}
 
-          {/* Extraction Status */}
+          {/* Intake Result — visible while extraction is running after quick filename scan */}
+          {activeDocument.extraction?.typePrediction &&
+            (activeDocument.processingStatus === "intake_complete" ||
+              activeDocument.extraction?.status === "intake_complete") && (
+            <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <ScanSearch className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                <h4 className="font-display text-sm font-semibold text-indigo-800 dark:text-indigo-200 uppercase tracking-wider flex-1">
+                  Intake Prediction
+                </h4>
+                <Badge
+                  variant="outline"
+                  className={`text-xs ${
+                    activeDocument.extraction.typePrediction.confidenceBand === "high"
+                      ? "border-green-400 text-green-700 dark:text-green-400"
+                      : activeDocument.extraction.typePrediction.confidenceBand === "medium"
+                        ? "border-yellow-400 text-yellow-700 dark:text-yellow-400"
+                        : "border-red-400 text-red-700 dark:text-red-400"
+                  }`}
+                >
+                  {activeDocument.extraction.typePrediction.confidenceBand} confidence
+                </Badge>
+              </div>
+              <div className="text-sm space-y-1.5">
+                <p className="text-muted-foreground">
+                  Predicted type:{" "}
+                  <span className="text-foreground font-medium capitalize">
+                    {activeDocument.extraction.typePrediction.predictedType.replace(/_/g, " ")}
+                  </span>
+                  {" "}({Math.round(activeDocument.extraction.typePrediction.confidence * 100)}%)
+                </p>
+                {activeDocument.extraction.routeDecision && (
+                  <p className="text-xs text-muted-foreground">
+                    Route:{" "}
+                    <span className="text-foreground font-medium">
+                      {activeDocument.extraction.routeDecision.replace(/_/g, " ")}
+                    </span>
+                  </p>
+                )}
+                {activeDocument.extraction.typePrediction.candidates &&
+                  activeDocument.extraction.typePrediction.candidates.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Alternatives:{" "}
+                      {activeDocument.extraction.typePrediction.candidates
+                        .slice(0, 3)
+                        .map((c) => `${c.type.replace(/_/g, " ")} (${Math.round(c.confidence * 100)}%)`)
+                        .join(" \u2022 ")}
+                    </p>
+                  )}
+              </div>
+              {activeDocument.extraction.typePrediction.confidenceBand !== "high" && (
+                <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-2">
+                  {activeDocument.extraction.typePrediction.confidenceBand === "medium"
+                    ? "Medium confidence \u2014 full extraction is running to refine the type."
+                    : "Low confidence \u2014 consider using \u201cRun with Type\u201d below to set the document type manually."}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Extraction Status */}}
           {activeDocument.extraction && (
             <div className="bg-muted/30 border border-border rounded-lg p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -269,17 +329,20 @@ const DocumentDetail = ({
                   <p className="uppercase tracking-wider">Pre-Extraction Type Prediction</p>
                   <p>
                     Predicted: <span className="text-foreground font-medium">{activeDocument.extraction.typePrediction.predictedType}</span>
-                    {" "}({Math.round((activeDocument.extraction.typePrediction.confidence ?? 0) * 100)}% • {activeDocument.extraction.typePrediction.confidenceBand})
+                    {" "}({Math.round((activeDocument.extraction.typePrediction.confidence ?? 0) * 100)}% \u2022 {activeDocument.extraction.typePrediction.confidenceBand})
                   </p>
                   {activeDocument.extraction.typePrediction.sourceName && (
                     <p>Source clue: <span className="text-foreground">{activeDocument.extraction.typePrediction.sourceName}</span></p>
+                  )}
+                  {activeDocument.extraction.routeDecision && (
+                    <p>Route: <span className="text-foreground font-medium">{activeDocument.extraction.routeDecision.replace(/_/g, " ")}</span></p>
                   )}
                   {activeDocument.extraction.typePrediction.candidates?.length > 0 && (
                     <p>
                       Candidates: {activeDocument.extraction.typePrediction.candidates
                         .slice(0, 3)
                         .map((c) => `${c.type} (${Math.round(c.confidence * 100)}%)`)
-                        .join(" • ")}
+                        .join(" \u2022 ")}
                     </p>
                   )}
                 </div>
