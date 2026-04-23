@@ -302,7 +302,7 @@ router.get("/documents/search-meta", async (req: Request, res: Response) => {
     });
 
     const filtered = docs.filter((doc) => {
-      const extracted = (doc.extractedData ?? {}) as Record<string, unknown>;
+      const extracted = (doc.extractedMetadata ?? {}) as Record<string, unknown>;
       const stepOne = (extracted.stepOne ?? {}) as Record<string, unknown>;
       const people = Array.isArray(stepOne.people) ? stepOne.people as Array<Record<string, unknown>> : [];
       const peopleNames = people.map((p) => String(p.name ?? "")).filter(Boolean);
@@ -337,7 +337,7 @@ router.get("/documents/search-meta", async (req: Request, res: Response) => {
           doc.title,
           doc.description,
           doc.author,
-          doc.searchText,
+          doc.extractedText,
           ...peopleNames,
           ...companies,
           ...locations,
