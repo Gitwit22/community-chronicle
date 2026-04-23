@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { X, AlertTriangle } from "lucide-react";
 import { MONTH_NAMES } from "@/types/document";
 import { useDocumentTypes } from "@/hooks/useDocuments";
+import { getDocumentTypeLabel } from "@/services/documentTypeClassifier";
 import type { ChronicleDocumentType } from "@/types/document";
 
 export interface Filters {
@@ -20,9 +21,19 @@ export interface Filters {
   documentType: string;
   sourceName: string;
   person: string;
+  personRole: string;
   company: string;
   reviewRequired: boolean;
 }
+
+const PERSON_ROLE_LABELS: Record<string, string> = {
+  primary_subject: "Primary Subject",
+  sender: "Sender",
+  recipient: "Recipient",
+  attendee: "Attendee",
+  staff_contact: "Staff / Contact",
+  unknown_person_mention: "Other Mention",
+};
 
 interface FilterBarProps {
   filters: Filters;
@@ -61,7 +72,7 @@ const FilterBar = ({ filters, onChange, years }: FilterBarProps) => {
     filters.financialCategory || filters.financialDocumentType ||
     filters.intakeSource || filters.processingStatus ||
     filters.documentType || filters.sourceName || filters.person ||
-    filters.company || filters.reviewRequired;
+    filters.personRole || filters.company || filters.reviewRequired;
 
   return (
     <div className="space-y-3">
@@ -85,6 +96,20 @@ const FilterBar = ({ filters, onChange, years }: FilterBarProps) => {
           placeholder="Person"
           className="w-[140px] bg-card font-body"
         />
+        <Select
+          value={filters.personRole}
+          onValueChange={(v) => onChange({ ...filters, personRole: v === "all" ? "" : v })}
+        >
+          <SelectTrigger className="w-[165px] bg-card font-body">
+            <SelectValue placeholder="Person Role" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Person Roles</SelectItem>
+            {Object.entries(PERSON_ROLE_LABELS).map(([value, label]) => (
+              <SelectItem key={value} value={value}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Input
           value={filters.company}
           onChange={(e) => onChange({ ...filters, company: e.target.value })}
@@ -209,7 +234,7 @@ const FilterBar = ({ filters, onChange, years }: FilterBarProps) => {
                 name: "", year: "", month: "", category: "", type: "",
                 financialCategory: "", financialDocumentType: "",
                 intakeSource: "", processingStatus: "",
-                documentType: "", sourceName: "", person: "", company: "",
+                documentType: "", sourceName: "", person: "", personRole: "", company: "",
                 reviewRequired: false,
               })
             }

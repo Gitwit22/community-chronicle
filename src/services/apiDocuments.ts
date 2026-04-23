@@ -395,6 +395,7 @@ export async function apiReclassifyDocument(
 
 export interface MetaSearchFilters {
   person?: string;
+  personRole?: string;
   company?: string;
   location?: string;
   referenceNumber?: string;
@@ -413,6 +414,7 @@ export async function apiSearchByMetadata(filters: MetaSearchFilters): Promise<{
 }> {
   const params = new URLSearchParams();
   if (filters.person) params.set("person", filters.person);
+  if (filters.personRole) params.set("personRole", filters.personRole);
   if (filters.company) params.set("company", filters.company);
   if (filters.location) params.set("location", filters.location);
   if (filters.referenceNumber) params.set("referenceNumber", filters.referenceNumber);

@@ -58,6 +58,7 @@ const EMPTY_FILTERS: Filters = {
   documentType: "",
   sourceName: "",
   person: "",
+  personRole: "",
   company: "",
   reviewRequired: false,
 };
@@ -109,6 +110,7 @@ const Index = () => {
     const nameQuery = filters.name.trim().toLowerCase();
     const sourceQuery = filters.sourceName.trim().toLowerCase();
     const personQuery = filters.person.trim().toLowerCase();
+    const personRoleQuery = filters.personRole.trim().toLowerCase();
     const companyQuery = filters.company.trim().toLowerCase();
 
     return allDocuments.filter((doc) => {
@@ -121,6 +123,7 @@ const Index = () => {
           doc.sourceName,
           ...(doc.metaPeople ?? []),
           ...(doc.metaCompanies ?? []),
+          ...(doc.metaOther ?? []),
           ...doc.tags,
           ...doc.keywords,
         ]
@@ -144,7 +147,31 @@ const Index = () => {
 
       if (personQuery) {
         const peopleHaystack = (doc.metaPeople ?? []).join(" ").toLowerCase();
-        if (!peopleHaystack.includes(personQuery)) return false;
+        if (!peopleHaystack.includes(personQuery)) {
+          const roleTaggedPeople = (doc.metaOther ?? [])
+            .map((entry) => String(entry))
+            .filter((entry) => entry.includes(":"));
+          const roleTaggedHit = roleTaggedPeople.some((entry) => {
+            const [, rawName] = entry.split(":", 2);
+            return (rawName ?? "").toLowerCase().includes(personQuery);
+          });
+          if (!roleTaggedHit) return false;
+        }
+      }
+
+      if (personRoleQuery) {
+        const roleTaggedPeople = (doc.metaOther ?? [])
+          .map((entry) => String(entry))
+          .filter((entry) => entry.includes(":"));
+
+        const roleMatched = roleTaggedPeople.some((entry) => {
+          const [rawRole, rawName] = entry.split(":", 2);
+          if ((rawRole ?? "").toLowerCase() !== personRoleQuery) return false;
+          if (!personQuery) return true;
+          return (rawName ?? "").toLowerCase().includes(personQuery);
+        });
+
+        if (!roleMatched) return false;
       }
 
       if (companyQuery) {
@@ -152,8 +179,19 @@ const Index = () => {
         if (!companyHaystack.includes(companyQuery)) return false;
       }
 
-      if (filters.year && doc.year !== Number(filters.year)) return false;
-      if (filters.month && doc.month !== Number(filters.month)) return false;
+      const dateFromField = doc.documentDate ? new Date(doc.documentDate) : null;
+      const derivedYear = dateFromField && !Number.isNaN(dateFromField.getTime())
+        ? dateFromField.getUTCFullYear()
+        : undefined;
+      const derivedMonth = dateFromField && !Number.isNaN(dateFromField.getTime())
+        ? dateFromField.getUTCMonth() + 1
+        : undefined;
+
+      const effectiveYear = doc.year || derivedYear;
+      const effectiveMonth = doc.month || derivedMonth;
+
+      if (filters.year && effectiveYear !== Number(filters.year)) return false;
+      if (filters.month && effectiveMonth !== Number(filters.month)) return false;
       if (filters.category && doc.category !== filters.category) return false;
       if (filters.type && doc.type !== filters.type) return false;
       if (filters.financialCategory && doc.financialCategory !== filters.financialCategory) return false;
