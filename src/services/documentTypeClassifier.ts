@@ -5,8 +5,8 @@
  * for instant feedback.  The server also runs the same logic on the extracted
  * text after processing, so this is a best-effort preview only.
  *
- * This replaces the heavy extractionRoutingService → coreApiClient → Llama schema
- * extraction path for the default intake workflow.
+ * The production extraction/classification pipeline is backend-driven.
+ * This module remains a lightweight local classifier utility for UI hints.
  *
  * Classification types:
  *   invoice | receipt | letter | form | sign_in_sheet |
