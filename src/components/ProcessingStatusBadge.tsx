@@ -54,7 +54,7 @@ const statusConfig: Record<
     icon: Loader2,
   },
   intake_complete: {
-    label: "Scanning",
+    label: "Intake Complete",
     variant: "secondary",
     icon: ScanSearch,
   },

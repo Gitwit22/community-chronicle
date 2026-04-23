@@ -8,11 +8,9 @@ import type { ArchiveDocument } from "@/types/document";
 import { MONTH_NAMES } from "@/types/document";
 import { downloadDocument, openOriginalDocument } from "@/lib/documentActions";
 import { toast } from "sonner";
-import {
-  EXTRACTION_DOCUMENT_TYPES,
-  type ExtractionDocumentType,
-} from "@/config/extractionSchemas";
 import { apiRetryWithType } from "@/services/apiDocuments";
+import { useDocumentTypes } from "@/hooks/useDocuments";
+import type { ChronicleDocumentType } from "@/types/document";
 
 interface DocumentDetailProps {
   document: ArchiveDocument | null;
@@ -41,12 +39,14 @@ const DocumentDetail = ({
   onDelete,
 }: DocumentDetailProps) => {
   const [localDocument, setLocalDocument] = useState<ArchiveDocument | null>(document);
-  const [rerunType, setRerunType] = useState<ExtractionDocumentType>("unknown_document");
+  const [rerunType, setRerunType] = useState<string>("unknown_document");
   const [isRerunning, setIsRerunning] = useState(false);
+
+  const { data: docTypes = [] } = useDocumentTypes();
 
   useEffect(() => {
     setLocalDocument(document);
-    setRerunType(((document?.extraction?.documentType ?? "unknown_document") as ExtractionDocumentType));
+    setRerunType(document?.documentType ?? document?.extraction?.documentType ?? "unknown_document");
   }, [document]);
 
   const structuredExtractionFields = useMemo(
@@ -201,10 +201,12 @@ const DocumentDetail = ({
             </div>
           )}
 
-          {/* Intake Result — visible while extraction is running after quick filename scan */}
+          {/* Intake Result — visible while extraction is pending or when type confirmation is needed */}
           {activeDocument.extraction?.typePrediction &&
             (activeDocument.processingStatus === "intake_complete" ||
-              activeDocument.extraction?.status === "intake_complete") && (
+              activeDocument.extraction?.status === "intake_complete" ||
+              activeDocument.extraction?.routeDecision === "confirmation_required" ||
+              activeDocument.extraction?.routeDecision === "unknown_waiting_for_type") && (
             <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4">
               <div className="flex items-center gap-2 mb-3">
                 <ScanSearch className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
@@ -253,15 +255,17 @@ const DocumentDetail = ({
               </div>
               {activeDocument.extraction.typePrediction.confidenceBand !== "high" && (
                 <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-2">
-                  {activeDocument.extraction.typePrediction.confidenceBand === "medium"
-                    ? "Medium confidence \u2014 full extraction is running to refine the type."
-                    : "Low confidence \u2014 consider using \u201cRun with Type\u201d below to set the document type manually."}
+                  {activeDocument.extraction?.routeDecision === "confirmation_required" || activeDocument.extraction?.routeDecision === "unknown_waiting_for_type"
+                    ? "Type confirmation required \u2014 use \u201cRun with Type\u201d below to assign the correct type and reprocess."
+                    : activeDocument.extraction.typePrediction.confidenceBand === "medium"
+                      ? "Medium confidence \u2014 full extraction is running to refine the type."
+                      : "Low confidence \u2014 consider using \u201cRun with Type\u201d below to set the document type manually."}
                 </p>
               )}
             </div>
           )}
 
-          {/* Extraction Status */}}
+          {/* Extraction Status */}
           {activeDocument.extraction && (
             <div className="bg-muted/30 border border-border rounded-lg p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -354,11 +358,12 @@ const DocumentDetail = ({
                   <select
                     className="h-9 rounded-md border border-border bg-background px-2 text-sm"
                     value={rerunType}
-                    onChange={(e) => setRerunType(e.target.value as ExtractionDocumentType)}
+                    onChange={(e) => setRerunType(e.target.value)}
                     disabled={isRerunning}
                   >
-                    {EXTRACTION_DOCUMENT_TYPES.map((type) => (
-                      <option key={type} value={type}>{type}</option>
+                    <option value="unknown_document">Auto-detect type</option>
+                    {(docTypes as ChronicleDocumentType[]).filter((t) => t.active && t.key !== "unknown_document").map((t) => (
+                      <option key={t.key} value={t.key}>{t.label}</option>
                     ))}
                   </select>
                   <Button type="button" size="sm" variant="outline" onClick={handleRerunExtraction} disabled={isRerunning || !canOpenFile}>
