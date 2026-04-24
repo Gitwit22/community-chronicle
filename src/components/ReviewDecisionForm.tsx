@@ -68,7 +68,7 @@ const ReviewDecisionForm = ({ document, onResolve, onDismiss, onCancel }: Review
       reclassifyMutation.mutate(
         {
           docId: document.id,
-          documentType: createNewType ? newTypeKey.toLowerCase().replace(/\s+/g, "_") : selectedType,
+          type: createNewType ? newTypeKey.toLowerCase().replace(/\s+/g, "_") : selectedType,
           notes,
           saveAsFingerprint: saveFingerprint,
           createNewType,

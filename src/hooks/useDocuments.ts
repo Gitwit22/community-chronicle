@@ -362,19 +362,19 @@ export function useReclassifyDocument() {
   return useMutation({
     mutationFn: ({
       docId,
-      documentType,
+      type,
       notes,
       saveAsFingerprint,
       createNewType,
       newTypeLabel,
     }: {
       docId: string;
-      documentType: string;
+      type: string;
       notes?: string;
       saveAsFingerprint?: boolean;
       createNewType?: boolean;
       newTypeLabel?: string;
-    }) => apiReclassifyDocument(docId, { documentType, notes, saveAsFingerprint, createNewType, newTypeLabel }),
+    }) => apiReclassifyDocument(docId, { type, notes, saveAsFingerprint, createNewType, newTypeLabel }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
       queryClient.invalidateQueries({ queryKey: ["document-types"] });

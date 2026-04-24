@@ -374,7 +374,7 @@ export async function apiSaveTypeFingerprint(
 export async function apiReclassifyDocument(
   docId: string,
   payload: {
-    documentType: string;
+    type: string;
     notes?: string;
     saveAsFingerprint?: boolean;
     createNewType?: boolean;

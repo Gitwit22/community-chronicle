@@ -350,8 +350,6 @@ export interface ArchiveDocument {
   classificationMatchedBy?: ClassificationMatchedBy | null;
   /** Classification confidence score (0–1) */
   classificationConfidence?: number | null;
-  /** True when document type is other_unclassified or confidence is low */
-  reviewRequired?: boolean;
 }
 
 /** A single audit trail event */

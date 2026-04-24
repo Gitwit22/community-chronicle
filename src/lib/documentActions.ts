@@ -16,16 +16,42 @@ function apiOrigin(): string | null {
 
 export function resolveDocumentUrl(fileUrl?: string): string | null {
   if (!fileUrl) return null;
-  if (fileUrl.startsWith("http://") || fileUrl.startsWith("https://")) {
-    return fileUrl;
+  const trimmed = fileUrl.trim();
+  if (!trimmed || trimmed === "#" || trimmed.toLowerCase() === "about:blank") {
+    return null;
+  }
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
   }
 
-  if (fileUrl.startsWith("/")) {
+  if (trimmed.startsWith("/")) {
     const origin = apiOrigin();
-    return origin ? `${origin}${fileUrl}` : fileUrl;
+    return origin ? `${origin}${trimmed}` : trimmed;
   }
 
-  return fileUrl;
+  return trimmed;
+}
+
+function isPreviewableMimeType(mimeType?: string): boolean {
+  if (!mimeType) return true;
+  const normalized = mimeType.toLowerCase();
+  if (normalized === "application/pdf") return true;
+  if (normalized.startsWith("image/")) return true;
+  if (normalized.startsWith("text/")) return true;
+  if (normalized.includes("json")) return true;
+  return false;
+}
+
+function filenameSuggestsPreviewableType(filename?: string): boolean {
+  if (!filename) return true;
+  const normalized = filename.toLowerCase();
+  return [".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".txt", ".csv", ".json"].some((ext) =>
+    normalized.endsWith(ext),
+  );
+}
+
+function shouldTryInlinePreview(mimeType?: string, filename?: string): boolean {
+  return isPreviewableMimeType(mimeType) && filenameSuggestsPreviewableType(filename);
 }
 
 function isProtectedDownloadUrl(url: string): boolean {
@@ -145,9 +171,10 @@ export async function downloadDocument(fileUrl?: string, filename?: string): Pro
   return true;
 }
 
-export async function openOriginalDocument(fileUrl?: string): Promise<boolean> {
+export async function openOriginalDocument(fileUrl?: string, mimeType?: string, filename?: string): Promise<boolean> {
   const resolved = resolveDocumentUrl(fileUrl);
   if (!resolved) return false;
+  if (!shouldTryInlinePreview(mimeType, filename)) return false;
 
   const popup = window.open("", "_blank", "noopener,noreferrer");
 
@@ -186,6 +213,11 @@ export async function openOriginalDocument(fileUrl?: string): Promise<boolean> {
   }
 
   if (!result.blob) {
+    popup?.close();
+    return false;
+  }
+
+  if (!isPreviewableMimeType(result.blob.type || mimeType)) {
     popup?.close();
     return false;
   }

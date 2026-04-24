@@ -68,14 +68,18 @@ const DocumentDetail = ({
   };
 
   const handleOpenOriginal = async () => {
-    const ok = await openOriginalDocument(activeDocument.fileUrl);
+    const ok = await openOriginalDocument(
+      activeDocument.fileUrl,
+      activeDocument.mimeType,
+      activeDocument.originalFileName ?? activeDocument.title,
+    );
     if (!ok) {
       const downloaded = await downloadDocument(activeDocument.fileUrl, activeDocument.originalFileName ?? activeDocument.title);
       if (downloaded) {
-        toast.warning("Could not open inline preview. Downloaded the original file instead.");
+        toast.warning("Inline preview was not available for this file. Downloaded the original instead.");
         return;
       }
-      toast.error("Unable to open the original file. Verify file availability and authentication.");
+      toast.error("Unable to open or download the original file. Verify file availability and authentication.");
     }
   };
 

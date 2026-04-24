@@ -3,8 +3,7 @@ import type { ArchiveDocument } from "@/types/document";
 export function isDocumentUnclassified(document: ArchiveDocument): boolean {
   return (
     document.documentType === "other_unclassified" ||
-    document.classificationStatus === "other_unclassified" ||
-    document.reviewRequired === true
+    document.classificationStatus === "other_unclassified"
   );
 }
 

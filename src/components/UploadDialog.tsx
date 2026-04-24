@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import ProcessingStatusBadge from "@/components/ProcessingStatusBadge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Upload,
@@ -35,6 +36,9 @@ import {
   useBulkUpload,
   useScannerImport,
 } from "@/hooks/useDocuments";
+import { getDocumentTypeLabel } from "@/services/documentTypeClassifier";
+import { isDocumentPendingReview } from "@/lib/reviewState";
+import type { ArchiveDocument } from "@/types/document";
 import { toast } from "sonner";
 
 /**
@@ -117,6 +121,7 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
   // Parallel array to selectedFiles — index i in folderPaths corresponds to selectedFiles[i].
   const [folderPaths, setFolderPaths] = useState<string[]>([]);
   const [uploadMode, setUploadMode] = useState<"files" | "folder" | "scanner">("files");
+  const [uploadedResults, setUploadedResults] = useState<ArchiveDocument[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const scannerInputRef = useRef<HTMLInputElement>(null);
@@ -131,6 +136,8 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
     uploadMultiple.isPending ||
     bulkUpload.isPending ||
     scannerImport.isPending;
+
+  const showingResults = uploadedResults.length > 0;
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -200,34 +207,52 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
     setFolderPaths((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const resetDialogState = () => {
+    setSelectedFiles([]);
+    setFolderPaths([]);
+    setUploadedResults([]);
+  };
+
+  const closeDialog = () => {
+    resetDialogState();
+    onOpenChange(false);
+  };
+
   const handleUpload = async () => {
     if (selectedFiles.length === 0) return;
 
     try {
+      let result: ArchiveDocument | ArchiveDocument[];
       switch (uploadMode) {
         case "folder":
           // Pass per-file relative paths so the backend can persist archival provenance
-          await bulkUpload.mutateAsync({
+          result = await bulkUpload.mutateAsync({
             files: selectedFiles,
             sourceReferences: folderPaths.length === selectedFiles.length ? folderPaths : undefined,
           });
           break;
         case "scanner":
-          await scannerImport.mutateAsync({ files: selectedFiles });
+          result = await scannerImport.mutateAsync({ files: selectedFiles });
           break;
         case "files":
         default:
           if (selectedFiles.length === 1) {
-            await uploadSingle.mutateAsync({ file: selectedFiles[0] });
+            result = await uploadSingle.mutateAsync({ file: selectedFiles[0] });
           } else {
-            await uploadMultiple.mutateAsync({ files: selectedFiles });
+            result = await uploadMultiple.mutateAsync({ files: selectedFiles });
           }
           break;
       }
       const documentLabel = selectedFiles.length === 1 ? "document" : "documents";
       toast.success(`${selectedFiles.length} ${documentLabel} uploaded and queued for processing`);
-      setSelectedFiles([]);
-      onOpenChange(false);
+
+      if (Array.isArray(result)) {
+        setUploadedResults(result);
+        setSelectedFiles([]);
+        setFolderPaths([]);
+      } else {
+        closeDialog();
+      }
     } catch (error) {
       toast.error(
         `Upload failed: ${error instanceof Error ? error.message : "Unknown error"}`
@@ -241,6 +266,20 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const getReviewBadge = (document: ArchiveDocument) => {
+    const routeDecision = document.extraction?.routeDecision;
+    if (document.documentType === "other_unclassified") {
+      return <Badge variant="outline" className="text-xs text-orange-700 border-orange-300">Unknown type</Badge>;
+    }
+    if (routeDecision === "confirmation_required" || routeDecision === "unknown_waiting_for_type") {
+      return <Badge variant="outline" className="text-xs text-orange-700 border-orange-300">Needs manual confirmation</Badge>;
+    }
+    if (isDocumentPendingReview(document)) {
+      return <Badge variant="outline" className="text-xs text-orange-700 border-orange-300">Needs review</Badge>;
+    }
+    return <Badge variant="outline" className="text-xs text-green-700 border-green-300">Auto-routed</Badge>;
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
@@ -249,9 +288,84 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
             Upload Documents
           </DialogTitle>
           <DialogDescription className="font-body text-sm text-muted-foreground">
-            Add documents to the archive using any of the methods below.
+            {showingResults
+              ? "Review the created records before closing this dialog."
+              : "Add documents to the archive using any of the methods below."}
           </DialogDescription>
         </DialogHeader>
+
+        {showingResults ? (
+          <div className="space-y-4 mt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-body text-sm font-medium text-foreground">
+                  {uploadedResults.length} document{uploadedResults.length !== 1 ? "s" : ""} created
+                </p>
+                <p className="font-body text-xs text-muted-foreground mt-1">
+                  Each item below shows the initial workflow state after upload.
+                </p>
+              </div>
+              <Badge variant="secondary" className="font-body">
+                {uploadMode.replace(/_/g, " ")}
+              </Badge>
+            </div>
+
+            <div className="max-h-[420px] overflow-y-auto space-y-2 pr-1">
+              {uploadedResults.map((document) => (
+                <div key={document.id} className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-body text-sm font-medium text-foreground truncate" title={document.originalFileName ?? document.title}>
+                        {document.originalFileName ?? document.title}
+                      </p>
+                      <p className="font-body text-xs text-muted-foreground mt-1">
+                        {document.documentType
+                          ? getDocumentTypeLabel(document.documentType)
+                          : "Type not assigned yet"}
+                      </p>
+                    </div>
+                    <ProcessingStatusBadge status={document.processingStatus} lifecycleStatus={document.status} />
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {document.documentType && (
+                      <Badge variant="secondary" className="text-xs font-body">
+                        {getDocumentTypeLabel(document.documentType)}
+                      </Badge>
+                    )}
+                    {document.needsReview ? (
+                      <Badge variant="outline" className="text-xs text-orange-700 border-orange-300">
+                        Review required
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-xs text-slate-700 border-slate-300">
+                        No review flag
+                      </Badge>
+                    )}
+                    {getReviewBadge(document)}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setUploadedResults([])}
+                className="font-body"
+              >
+                Upload more
+              </Button>
+              <Button
+                onClick={closeDialog}
+                className="font-body bg-primary hover:bg-primary/90"
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        ) : (
+        <>
 
         <Tabs
           value={uploadMode}
@@ -423,7 +537,7 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
         <div className="flex justify-end gap-3 mt-4">
           <Button
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={closeDialog}
             disabled={isUploading}
             className="font-body"
           >
@@ -460,6 +574,8 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
             <AlertCircle className="h-4 w-4" />
             Upload failed. Please try again.
           </div>
+        )}
+        </>
         )}
       </DialogContent>
     </Dialog>
