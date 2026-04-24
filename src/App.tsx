@@ -20,6 +20,7 @@ import { OrgRolesSettings } from "./pages/OrgRolesSettings.tsx";
 import { OrgProgramAccessSettings } from "./pages/OrgProgramAccessSettings.tsx";
 import { OrgInvitationsSettings } from "./pages/OrgInvitationsSettings.tsx";
 import DocIntelDebug from "./pages/DocIntelDebug.tsx";
+import DocumentSearchPage from "./pages/DocumentSearch.tsx";
 
 const queryClient = new QueryClient();
 
@@ -100,6 +101,7 @@ const App = () => (
               {/* Main archive app — protected, requires valid Chronicle session */}
               <Route path="/debug/doc-intel" element={<ProtectedRoute><DocIntelDebug /></ProtectedRoute>} />
               <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+              <Route path="/documents/search" element={<ProtectedRoute><DocumentSearchPage /></ProtectedRoute>} />
               {/* Redirect old entry-point hits */}
               <Route path="/index" element={<Navigate to="/" replace />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

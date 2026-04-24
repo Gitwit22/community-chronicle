@@ -10,6 +10,66 @@ import type {
 import { API_BASE } from "@/lib/apiBase";
 import { getAuthHeaders } from "@/lib/tokenStorage";
 
+export interface DocumentSearchResultItem {
+  id: string;
+  title: string;
+  filename: string | null;
+  documentType: string;
+  tags: string[];
+  entities: {
+    people: string[];
+    organizations: string[];
+    locations: string[];
+    references: string[];
+  };
+  uploadedAt: string;
+  documentDate: string | null;
+  snippet: string;
+  markdownAvailable: boolean;
+  originalAvailable: boolean;
+}
+
+export interface DocumentSearchResponse {
+  results: DocumentSearchResultItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface DocumentSearchParams {
+  q?: string;
+  tags?: string[];
+  type?: string;
+  person?: string;
+  organization?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface DocumentPreview {
+  id: string;
+  title: string;
+  filename: string | null;
+  documentType: string;
+  uploadedAt: string;
+  documentDate: string | null;
+  previewText: string;
+  previewMarkdown: string | null;
+  snippet: string;
+  markdownAvailable: boolean;
+  originalAvailable: boolean;
+  truncated: boolean;
+}
+
+export interface OriginalUrlResponse {
+  url: string;
+  expiresAt: string;
+  filename: string | null;
+  disposition: "inline" | "attachment";
+}
+
 async function parseJsonResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
@@ -81,6 +141,45 @@ export async function apiGetDocumentById(id: string): Promise<ArchiveDocument | 
   });
   if (response.status === 404) return undefined;
   return parseJsonResponse<ArchiveDocument>(response);
+}
+
+export async function apiSearchDocuments(params: DocumentSearchParams): Promise<DocumentSearchResponse> {
+  const query = new URLSearchParams();
+
+  if (params.q) query.set("q", params.q);
+  if (params.tags && params.tags.length > 0) query.set("tags", params.tags.join(","));
+  if (params.type) query.set("type", params.type);
+  if (params.person) query.set("person", params.person);
+  if (params.organization) query.set("organization", params.organization);
+  if (params.dateFrom) query.set("dateFrom", params.dateFrom);
+  if (params.dateTo) query.set("dateTo", params.dateTo);
+  if (typeof params.limit === "number") query.set("limit", String(params.limit));
+  if (typeof params.offset === "number") query.set("offset", String(params.offset));
+
+  const response = await fetch(`${API_BASE}/documents/search?${query.toString()}`, {
+    headers: getAuthHeaders(),
+  });
+
+  return parseJsonResponse<DocumentSearchResponse>(response);
+}
+
+export async function apiGetDocumentPreview(id: string): Promise<DocumentPreview> {
+  const response = await fetch(`${API_BASE}/documents/${id}/preview`, {
+    headers: getAuthHeaders(),
+  });
+
+  return parseJsonResponse<DocumentPreview>(response);
+}
+
+export async function apiGetOriginalUrl(
+  id: string,
+  disposition: "inline" | "attachment" = "inline",
+): Promise<OriginalUrlResponse> {
+  const response = await fetch(`${API_BASE}/documents/${id}/original-url?disposition=${disposition}`, {
+    headers: getAuthHeaders(),
+  });
+
+  return parseJsonResponse<OriginalUrlResponse>(response);
 }
 
 export async function apiUploadSingleFile(

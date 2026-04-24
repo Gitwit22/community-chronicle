@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Clock, FileText, Search as SearchIcon, Shield, Database, Upload, Globe, PenLine, LayoutDashboard, Eye, Settings, LogOut, User, Building2, ChevronDown, ExternalLink, RefreshCw } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useOrgContext } from "@/context/OrgContext";
@@ -19,6 +20,7 @@ import SearchBar from "@/components/SearchBar";
 import FilterBar, { type Filters } from "@/components/FilterBar";
 import DocumentCard from "@/components/DocumentCard";
 import DocumentDetail from "@/components/DocumentDetail";
+import DocumentPreviewModal from "@/components/DocumentPreviewModal";
 import UploadDialog from "@/components/UploadDialog";
 import ManualEntryForm from "@/components/ManualEntryForm";
 import Timeline from "@/components/Timeline";
@@ -29,6 +31,12 @@ import { useBulkDeleteDocuments, useDeleteDocument, useDocuments, useDocumentYea
 import { PROGRAM_DISPLAY_NAME, PROGRAM_SYSTEM_NAME } from "@/lib/programInfo";
 import { isDocumentPendingReview } from "@/lib/reviewState";
 import type { ArchiveDocument, ReviewMetadata } from "@/types/document";
+import {
+  apiGetDocumentPreview,
+  apiSearchDocuments,
+  type DocumentPreview,
+  type DocumentSearchResultItem,
+} from "@/services/apiDocuments";
 import { toast } from "sonner";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -69,11 +77,15 @@ const Index = () => {
   const { membership, canManage } = useOrgContext();
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuickQuery, setDebouncedQuickQuery] = useState("");
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [selectedDoc, setSelectedDoc] = useState<ArchiveDocument | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [manualEntryOpen, setManualEntryOpen] = useState(false);
+  const [quickPreview, setQuickPreview] = useState<DocumentPreview | null>(null);
+  const [quickPreviewOpen, setQuickPreviewOpen] = useState(false);
+  const [quickPreviewLoadingId, setQuickPreviewLoadingId] = useState<string | null>(null);
 
   const { data: allDocuments = [], isLoading } = useDocuments();
   const { data: years = [] } = useDocumentYears();
@@ -83,6 +95,19 @@ const Index = () => {
   const bulkReprocessMutation = useBulkReprocess();
   const bulkDeleteDocumentsMutation = useBulkDeleteDocuments();
   const deleteDocumentMutation = useDeleteDocument();
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuickQuery(searchInput.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  const quickSearchQuery = useQuery({
+    queryKey: ["documents", "quick-search", debouncedQuickQuery],
+    queryFn: () => apiSearchDocuments({ q: debouncedQuickQuery, limit: 5, offset: 0 }),
+    enabled: debouncedQuickQuery.length >= 2,
+  });
 
   // Show settings tab if: org admin/owner, OR legacy app-level admin, OR suite admin
   const showSettings = canManage || role === "admin" || isSuiteAdmin(user);
@@ -227,12 +252,19 @@ const Index = () => {
   };
 
   const handleRunSearch = () => {
-    setSearchQuery(searchInput);
+    const q = searchInput.trim();
+    if (!q) return;
+    const params = new URLSearchParams();
+    params.set("q", q);
+    params.set("limit", "20");
+    params.set("offset", "0");
+    navigate(`/documents/search?${params.toString()}`);
   };
 
   const handleClearSearchAndFilters = () => {
     setSearchInput("");
     setSearchQuery("");
+    setDebouncedQuickQuery("");
     setFilters(EMPTY_FILTERS);
   };
 
@@ -323,6 +355,20 @@ const Index = () => {
 
   const handleClearSelection = () => {
     setSelectedDocumentIds([]);
+  };
+
+  const handleOpenQuickPreview = async (result: DocumentSearchResultItem) => {
+    setQuickPreviewLoadingId(result.id);
+    try {
+      const preview = await apiGetDocumentPreview(result.id);
+      setQuickPreview(preview);
+      setQuickPreviewOpen(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load document preview.";
+      toast.error(message);
+    } finally {
+      setQuickPreviewLoadingId(null);
+    }
   };
 
   return (
@@ -459,13 +505,66 @@ const Index = () => {
             racial equity and community empowerment.
           </p>
           <div className="flex justify-center mb-12">
-            <SearchBar
-              value={searchInput}
-              onChange={setSearchInput}
-              onSearch={handleRunSearch}
-              onClear={handleClearSearchAndFilters}
-              clearLabel="Clear All"
-            />
+            <div className="w-full max-w-2xl space-y-3">
+              <SearchBar
+                value={searchInput}
+                onChange={setSearchInput}
+                onSearch={handleRunSearch}
+                onClear={handleClearSearchAndFilters}
+                clearLabel="Clear All"
+              />
+
+              {debouncedQuickQuery.length >= 2 && (
+                <div className="rounded-xl border border-border bg-card text-left p-3 shadow-sm">
+                  {quickSearchQuery.isLoading && (
+                    <p className="text-sm text-muted-foreground font-body">Searching...</p>
+                  )}
+
+                  {quickSearchQuery.isError && (
+                    <p className="text-sm text-destructive font-body">Quick search failed. Try full search.</p>
+                  )}
+
+                  {!quickSearchQuery.isLoading &&
+                    !quickSearchQuery.isError &&
+                    (quickSearchQuery.data?.results.length ?? 0) === 0 && (
+                      <p className="text-sm text-muted-foreground font-body">No quick matches found.</p>
+                    )}
+
+                  {!quickSearchQuery.isLoading &&
+                    !quickSearchQuery.isError &&
+                    (quickSearchQuery.data?.results.length ?? 0) > 0 && (
+                      <div className="space-y-2">
+                        {quickSearchQuery.data?.results.map((result) => (
+                          <button
+                            key={result.id}
+                            type="button"
+                            className="w-full rounded-lg border border-border p-3 text-left hover:bg-muted/60 transition-colors"
+                            onClick={() => void handleOpenQuickPreview(result)}
+                            disabled={quickPreviewLoadingId === result.id}
+                          >
+                            <p className="font-body text-sm font-semibold text-foreground">{result.title}</p>
+                            <p className="font-body text-xs text-muted-foreground mt-1 line-clamp-2">{result.snippet || "No preview text"}</p>
+                            {quickPreviewLoadingId === result.id && (
+                              <p className="font-body text-xs text-muted-foreground mt-2">Loading preview...</p>
+                            )}
+                          </button>
+                        ))}
+                        <div className="pt-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="font-body"
+                            onClick={handleRunSearch}
+                          >
+                            View all results
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* System capabilities */}
@@ -698,6 +797,16 @@ const Index = () => {
         canDelete={role === "admin"}
         isDeleting={deleteDocumentMutation.isPending}
         onDelete={handleDeleteDocument}
+      />
+      <DocumentPreviewModal
+        preview={quickPreview}
+        open={quickPreviewOpen}
+        onOpenChange={(open) => {
+          setQuickPreviewOpen(open);
+          if (!open) {
+            setQuickPreview(null);
+          }
+        }}
       />
       <UploadDialog open={uploadOpen} onOpenChange={setUploadOpen} />
       <ManualEntryForm open={manualEntryOpen} onOpenChange={setManualEntryOpen} />
