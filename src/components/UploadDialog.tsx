@@ -251,11 +251,10 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
         }
 
         const count = selectedFiles.length;
+        const pdfCount = selectedFiles.filter((f) => f.type === "application/pdf").length;
         toast.success(
           `${count} ${count === 1 ? "document" : "documents"} uploaded — ${
-            selectedFiles.reduce((s, f) => s + (f.type === "application/pdf" ? 1 : 0), 0) > 0
-              ? "pages extracted and labeled"
-              : "queued for review"
+            pdfCount > 0 ? "pages extracted and labeled" : "queued for review"
           }`,
         );
 
@@ -449,7 +448,7 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
             {PAGE_FIRST_INTAKE_ENABLED && (
               <div className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs font-body text-primary">
                 <Layers className="h-3.5 w-3.5 shrink-0" />
-                Page-first intake is enabled — uploaded PDFs will be split into individually labelled pages and you will be taken to the review screen.
+                Page-first intake is enabled — uploaded PDFs will be split into individually labeled pages and you will be taken to the review screen.
               </div>
             )}
             {/* Drag and Drop Zone */}
