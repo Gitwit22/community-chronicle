@@ -92,37 +92,135 @@ model Membership {
 }
 
 model Document {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   organizationId   String
-  fileName         String
-  fileType         String   // pdf, docx, xlsx, etc.
-  filePath         String   // S3/R2 path: org/{orgId}/documents/{fileId}
+  originalFileName String
+  mimeType         String    // pdf, docx, xlsx, image/*, etc.
+  filePath         String    // S3/R2 path: org/{orgId}/documents/{fileId}
   fileSize         Int
   title            String?
   description      String?
-  classification   String?  // document type extracted by LLM
-  status           String   @default("uploaded")  // uploaded, processing, classified, reviewed, archived
-  confidence       Float?   // classification confidence score
-  extractedData    Json?    // extracted fields from document intelligence
-  searchText       String?  // denormalized full-text search index
+  author           String?
+  type             String?   // document type extracted by LLM or rules
+  processingStatus String    @default("uploaded")  // uploaded, processing, processed, failed, needs_review
+  status           String    @default("active")    // active, archived
+  confidence       Float?    // classification confidence score
+  extractedMetadata Json?    // extracted fields from document intelligence
+  extractedText    String?   // full-text content for search
   uploadedById     String
   createdById      String
   reviewedById     String?
   reviewedAt       DateTime?
   reviewNotes      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedBy   User         @relation("UploadedBy", fields: [uploadedById], references: [id])
+  createdBy    User         @relation("CreatedBy", fields: [createdById], references: [id])
+  reviewedBy   User?        @relation("ReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([organizationId])
+  @@index([processingStatus])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Page-first intake models (v1 additive flow)
+// ─────────────────────────────────────────────────────────────────
+
+model OriginalUpload {
+  id                String   @id @default(cuid())
+  orgId             String
+  uploadedById      String?
+  originalFileName  String
+  originalMimeType  String
+  originalFilePath  String
+  originalFileUrl   String?
+  pageCount         Int      @default(0)
+  processingStatus  String   @default("pending")  // pending, splitting, labeling, grouping, complete, failed
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  pages   DocumentPage[]
+  packets DocumentPacket[]
+
+  @@index([orgId])
+  @@index([processingStatus])
+  @@index([createdAt])
+}
+
+model DocumentPage {
+  id               String   @id @default(cuid())
+  originalUploadId String
+  orgId            String
+  pageNumber       Int
+  pageImagePath    String?
+  pageText         String?
+  detectedDocType  String?
+  detectedCompanyOrOrg String?
+  detectedPersonName   String?
+  detectedMonth    Int?
+  detectedYear     Int?
+  detectedDate     String?
+  confidence       Float    @default(0)
+  needsReview      Boolean  @default(false)
+  processingStatus String   @default("pending")  // pending, ocr_complete, labeled, failed
+  rawExtractionJson Json?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  uploadedBy      User        @relation("UploadedBy", fields: [uploadedById], references: [id])
-  createdBy       User        @relation("CreatedBy", fields: [createdById], references: [id])
-  reviewedBy      User?       @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  upload      OriginalUpload       @relation(fields: [originalUploadId], references: [id], onDelete: Cascade)
+  packetPages DocumentPacketPage[]
 
-  @@index([organizationId])
+  @@index([originalUploadId])
+  @@index([orgId])
+  @@index([pageNumber])
+  @@index([detectedDocType])
+  @@index([detectedYear, detectedMonth])
+  @@index([needsReview])
+}
+
+model DocumentPacket {
+  id                  String   @id @default(cuid())
+  orgId               String
+  originalUploadId    String?
+  title               String
+  packetType          String?
+  primaryCompanyOrOrg String?
+  primaryPersonName   String?
+  detectedMonth       Int?
+  detectedYear        Int?
+  confidence          Float    @default(0)
+  needsReview         Boolean  @default(false)
+  status              String   @default("suggested")  // suggested, approved, rejected
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  upload OriginalUpload?      @relation(fields: [originalUploadId], references: [id], onDelete: SetNull)
+  pages  DocumentPacketPage[]
+
+  @@index([orgId])
+  @@index([originalUploadId])
   @@index([status])
-  @@index([classification])
-  @@index([uploadedAt: createdAt])
-  @@fulltext([searchText])
+  @@index([detectedYear, detectedMonth])
+}
+
+model DocumentPacketPage {
+  id               String   @id @default(cuid())
+  packetId         String
+  pageId           String
+  orderIndex       Int
+  relationshipType String   @default("unknown")  // primary, continuation, attachment, receipt_support, signature_page, cover_page, invoice_detail, unknown
+  createdAt        DateTime @default(now())
+
+  packet DocumentPacket @relation(fields: [packetId], references: [id], onDelete: Cascade)
+  page   DocumentPage   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([packetId, pageId])
+  @@index([packetId])
+  @@index([pageId])
 }
 
 model SearchLog {
