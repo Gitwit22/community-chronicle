@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import searchRoutes from "./routes/search.js";
+import pageFirstRoutes from "./routes/pageFirstIntake.js";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -22,6 +23,9 @@ app.get("/api/health", (req, res) => {
 
 // Search routes (local)
 app.use("/api", searchRoutes);
+
+// Page-first intake routes
+app.use("/api", pageFirstRoutes);
 
 // Proxy document routes to nxt-lvl-api
 app.use("/api/documents", express.json({ limit: "50mb" }), async (req, res) => {
