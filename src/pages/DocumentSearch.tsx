@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, FileSearch, Loader2 } from "lucide-react";
+import { ArrowLeft, FileSearch, Layers, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import SearchBar from "@/components/SearchBar";
@@ -13,6 +13,12 @@ import {
   type DocumentSearchParams,
   type DocumentSearchResultItem,
 } from "@/services/apiDocuments";
+import {
+  apiPageSearch,
+  apiPacketSearch,
+} from "@/services/apiPageFirstIntake";
+import { PAGE_FIRST_INTAKE_ENABLED } from "@/services/pageFirstUpload";
+import type { DocumentPage, DocumentPacket } from "@/types/pageFirstIntake";
 import { toast } from "sonner";
 
 const PAGE_SIZE = 20;
@@ -82,6 +88,38 @@ export default function DocumentSearchPage() {
     queryKey: ["documents", "api-search", currentParams],
     queryFn: () => apiSearchDocuments(currentParams),
   });
+
+  // Page-first search queries (only run when feature flag is enabled)
+  const pageSearchQuery = useQuery({
+    queryKey: ["page-first", "page-search", currentParams.q, currentParams.type, currentParams.person, currentParams.organization],
+    queryFn: () =>
+      apiPageSearch({
+        q: currentParams.q,
+        type: currentParams.type,
+        person: currentParams.person,
+        organization: currentParams.organization,
+        limit: PAGE_SIZE,
+        offset: 0,
+      }),
+    enabled: PAGE_FIRST_INTAKE_ENABLED && !!(currentParams.q || currentParams.type || currentParams.person || currentParams.organization),
+  });
+
+  const packetSearchQuery = useQuery({
+    queryKey: ["page-first", "packet-search", currentParams.q, currentParams.type, currentParams.person, currentParams.organization],
+    queryFn: () =>
+      apiPacketSearch({
+        q: currentParams.q,
+        type: currentParams.type,
+        person: currentParams.person,
+        organization: currentParams.organization,
+        limit: PAGE_SIZE,
+        offset: 0,
+      }),
+    enabled: PAGE_FIRST_INTAKE_ENABLED && !!(currentParams.q || currentParams.type || currentParams.person || currentParams.organization),
+  });
+
+  const pageResults: DocumentPage[] = pageSearchQuery.data?.pages ?? [];
+  const packetResults: DocumentPacket[] = packetSearchQuery.data?.packets ?? [];
 
   const results = data?.results ?? [];
   const total = data?.total ?? 0;
@@ -215,6 +253,90 @@ export default function DocumentSearchPage() {
                 <p className="text-sm text-muted-foreground">{item.snippet}</p>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ── Page-First Results (shown when flag is enabled and search ran) ── */}
+        {PAGE_FIRST_INTAKE_ENABLED && (pageResults.length > 0 || packetResults.length > 0) && (
+          <div className="space-y-4 border-t border-border pt-6">
+            <h2 className="font-body text-sm font-semibold text-muted-foreground flex items-center gap-2">
+              <Layers className="h-4 w-4" />
+              Page-First Results
+            </h2>
+
+            {/* Page-level results */}
+            {pageResults.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground font-body">Pages ({pageResults.length})</p>
+                {pageResults.map((page) => (
+                  <div key={page.id} className="rounded-xl border border-border bg-card p-3 space-y-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-body text-sm font-medium">
+                          {page.detectedDocType
+                            ? page.detectedDocType.replace(/_/g, " ")
+                            : "Unknown type"}{" "}
+                          — Page {page.pageNumber}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {[page.detectedCompanyOrOrg, page.detectedPersonName]
+                            .filter(Boolean)
+                            .join(" · ") || "No metadata detected"}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          navigate(
+                            `/documents/page-first/review/${page.originalUploadId}`,
+                          )
+                        }
+                      >
+                        Open Review
+                      </Button>
+                    </div>
+                    {page.pageText && (
+                      <p className="text-xs text-muted-foreground line-clamp-2">{page.pageText}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Packet-level results */}
+            {packetResults.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground font-body">Packets ({packetResults.length})</p>
+                {packetResults.map((packet) => (
+                  <div key={packet.id} className="rounded-xl border border-border bg-card p-3 space-y-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-body text-sm font-medium">{packet.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {[packet.primaryCompanyOrOrg, packet.primaryPersonName]
+                            .filter(Boolean)
+                            .join(" · ") || "No metadata"}
+                        </p>
+                      </div>
+                      {packet.originalUploadId && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            navigate(
+                              `/documents/page-first/review/${packet.originalUploadId}`,
+                            )
+                          }
+                        >
+                          Open Review
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

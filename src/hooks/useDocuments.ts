@@ -40,6 +40,8 @@ import {
   apiUpdateDocumentType,
   apiSaveTypeFingerprint,
 } from "@/services/apiDocuments";
+import { processFileForPageFirst } from "@/services/pageFirstUpload";
+import type { PageFirstUploadResponse } from "@/types/pageFirstIntake";
 
 const QUERY_KEYS = {
   documents: ["documents"] as const,
@@ -448,5 +450,30 @@ export function useSaveTypeFingerprint() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["document-types"] });
     },
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Page-first intake hook
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Hook: Process a file through the page-first intake pipeline.
+ *
+ * Extracts per-page text, labels each page, and submits to
+ * POST /documents/page-first/upload.
+ *
+ * Returns a mutation where:
+ *   - mutateAsync({ file, orgId, uploadedById? }) → PageFirstUploadResponse
+ *   - data.originalUploadId can be used to navigate to the review page
+ */
+export function usePageFirstUpload() {
+  return useMutation<
+    PageFirstUploadResponse,
+    Error,
+    { file: File; orgId: string; uploadedById?: string }
+  >({
+    mutationFn: ({ file, orgId, uploadedById }) =>
+      processFileForPageFirst(file, orgId, uploadedById),
   });
 }

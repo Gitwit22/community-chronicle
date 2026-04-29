@@ -660,6 +660,20 @@ function PageFirstReviewContent({ uploadId }: { uploadId: string }) {
             <Badge variant="secondary">{pages.length} pages</Badge>
             <Badge variant="outline">{packets.length} packets</Badge>
 
+            {/* In-progress mutation indicators */}
+            {patchLabelsMutation.isPending && (
+              <Badge variant="secondary" className="text-xs gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Saving labels…
+              </Badge>
+            )}
+            {createPacketMutation.isPending && (
+              <Badge variant="secondary" className="text-xs gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Creating packet…
+              </Badge>
+            )}
+
             <Button
               size="sm"
               variant="secondary"
@@ -702,22 +716,35 @@ function PageFirstReviewContent({ uploadId }: { uploadId: string }) {
         {isError && (
           <Card>
             <CardContent className="py-8 text-center text-destructive">
-              Failed to load pages or packets. Please try refreshing.
+              <AlertTriangle className="h-8 w-8 mx-auto mb-3 text-destructive" />
+              Failed to load pages or packets for this upload.
+              <div className="mt-3">
+                <Button variant="outline" size="sm" onClick={() => {
+                  pagesQuery.refetch();
+                  packetsQuery.refetch();
+                }}>
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                  Retry
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Empty state */}
+        {/* Empty state — upload may still be processing */}
         {!isLoading && !isError && pages.length === 0 && (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
               <FileText className="h-10 w-10 mx-auto mb-3 opacity-40" />
-              <p>No pages found for this upload.</p>
-              <p className="text-xs mt-1">
-                Submit pages via{" "}
-                <code className="bg-muted px-1 rounded">POST /documents/page-first/upload</code>
-                {" "}first.
+              <p className="font-medium">No pages found for this upload.</p>
+              <p className="text-xs mt-1 max-w-xs mx-auto">
+                The upload may still be processing, or the upload ID is invalid.
+                If you just uploaded, wait a moment and refresh.
               </p>
+              <Button variant="outline" size="sm" className="mt-4" onClick={() => pagesQuery.refetch()}>
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Refresh
+              </Button>
             </CardContent>
           </Card>
         )}

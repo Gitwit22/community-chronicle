@@ -139,7 +139,7 @@ model OriginalUpload {
   originalFilePath  String
   originalFileUrl   String?
   pageCount         Int      @default(0)
-  processingStatus  String   @default("pending")  // pending, splitting, labeling, grouping, complete, failed
+  processingStatus  String   @default("pending")  // uploaded, pending, splitting, labeling, grouping, review_ready, approved, complete, failed
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -166,7 +166,7 @@ model DocumentPage {
   detectedDate     String?
   confidence       Float    @default(0)
   needsReview      Boolean  @default(false)
-  processingStatus String   @default("pending")  // pending, ocr_complete, labeled, failed
+  processingStatus String   @default("pending")  // pending, ocr_complete, labeled, reviewed, failed
   rawExtractionJson Json?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -194,7 +194,7 @@ model DocumentPacket {
   detectedYear        Int?
   confidence          Float    @default(0)
   needsReview         Boolean  @default(false)
-  status              String   @default("suggested")  // suggested, approved, rejected
+  status              String   @default("suggested")  // suggested, approved, rejected, manually_created
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

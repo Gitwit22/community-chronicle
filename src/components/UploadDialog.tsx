@@ -9,6 +9,7 @@
  */
 
 import { useState, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -29,16 +30,20 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
+  Layers,
 } from "lucide-react";
 import {
   useUploadFile,
   useUploadMultipleFiles,
   useBulkUpload,
   useScannerImport,
+  usePageFirstUpload,
 } from "@/hooks/useDocuments";
+import { PAGE_FIRST_INTAKE_ENABLED } from "@/services/pageFirstUpload";
 import { getDocumentTypeLabel } from "@/services/documentTypeClassifier";
 import { isDocumentPendingReview } from "@/lib/reviewState";
 import type { ArchiveDocument } from "@/types/document";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
 /**
@@ -115,6 +120,8 @@ interface UploadDialogProps {
 }
 
 const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
+  const navigate = useNavigate();
+  const { organizationId, user } = useAuth();
   const [dragActive, setDragActive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   // Per-file relative paths for folder uploads (webkitRelativePath).
@@ -130,12 +137,14 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
   const uploadMultiple = useUploadMultipleFiles();
   const bulkUpload = useBulkUpload();
   const scannerImport = useScannerImport();
+  const pageFirstUpload = usePageFirstUpload();
 
   const isUploading =
     uploadSingle.isPending ||
     uploadMultiple.isPending ||
     bulkUpload.isPending ||
-    scannerImport.isPending;
+    scannerImport.isPending ||
+    pageFirstUpload.isPending;
 
   const showingResults = uploadedResults.length > 0;
 
@@ -221,6 +230,49 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
   const handleUpload = async () => {
     if (selectedFiles.length === 0) return;
 
+    // ── Page-first intake flow ──────────────────────────────────────────────
+    // When enabled, process each file through the page-first pipeline and
+    // redirect to the review screen.  Only the "files" tab supports page-first;
+    // folder/scanner uploads fall back to the legacy batch endpoint.
+    if (PAGE_FIRST_INTAKE_ENABLED && uploadMode === "files" && organizationId) {
+      try {
+        // Process files one at a time — each becomes its own OriginalUpload.
+        // Navigate to the review page for the first (or only) upload.
+        let firstUploadId: string | null = null;
+        for (const file of selectedFiles) {
+          const result = await pageFirstUpload.mutateAsync({
+            file,
+            orgId: organizationId,
+            uploadedById: user?.id,
+          });
+          if (!firstUploadId) {
+            firstUploadId = result.originalUploadId;
+          }
+        }
+
+        const count = selectedFiles.length;
+        toast.success(
+          `${count} ${count === 1 ? "document" : "documents"} uploaded — ${
+            selectedFiles.reduce((s, f) => s + (f.type === "application/pdf" ? 1 : 0), 0) > 0
+              ? "pages extracted and labeled"
+              : "queued for review"
+          }`,
+        );
+
+        closeDialog();
+
+        if (firstUploadId) {
+          navigate(`/documents/page-first/review/${firstUploadId}`);
+        }
+      } catch (error) {
+        toast.error(
+          `Upload failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
+      }
+      return;
+    }
+
+    // ── Legacy upload flow ─────────────────────────────────────────────────
     try {
       let result: ArchiveDocument | ArchiveDocument[];
       switch (uploadMode) {
@@ -393,6 +445,13 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
 
           {/* File Upload Tab */}
           <TabsContent value="files" className="space-y-4">
+            {/* Page-first intake notice */}
+            {PAGE_FIRST_INTAKE_ENABLED && (
+              <div className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs font-body text-primary">
+                <Layers className="h-3.5 w-3.5 shrink-0" />
+                Page-first intake is enabled — uploaded PDFs will be split into individually labelled pages and you will be taken to the review screen.
+              </div>
+            )}
             {/* Drag and Drop Zone */}
             <div
               className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-colors ${

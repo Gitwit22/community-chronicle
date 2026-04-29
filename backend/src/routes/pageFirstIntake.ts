@@ -124,7 +124,7 @@ router.post("/documents/page-first/upload", async (req: Request, res: Response) 
         originalFilePath,
         originalFileUrl: originalFileUrl ?? null,
         pageCount: pages.length,
-        processingStatus: pages.length > 0 ? "complete" : "pending",
+        processingStatus: pages.length > 0 ? "review_ready" : "uploaded",
         pages: {
           create: pages.map((p) => ({
             orgId,

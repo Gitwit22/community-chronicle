@@ -154,3 +154,84 @@ export const pdfExtractor: TextExtractorAdapter = {
     }
   },
 };
+
+/**
+ * Extract per-page text from a PDF file.
+ *
+ * Returns a `string[]` where index 0 = page 1 text, index 1 = page 2 text, etc.
+ * For scanned (image-only) PDFs, falls back to Tesseract OCR per page.
+ * For non-PDF files, returns a single-element array with the raw content.
+ */
+export async function extractPdfPageTexts(file: File): Promise<string[]> {
+  if (file.type !== "application/pdf") {
+    // Non-PDF: return the whole file content as a single "page"
+    const { normalizeExtractedText } = await import("@/services/textExtractor");
+    const text = await file.text().catch(() => "");
+    return [normalizeExtractedText(text)];
+  }
+
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const uint8 = new Uint8Array(await file.arrayBuffer());
+    const loadingTask = pdfjs.getDocument({
+      data: uint8,
+      useWorkerFetch: false,
+      isEvalSupported: false,
+    });
+    const pdf = await loadingTask.promise;
+
+    const pageTexts: string[] = [];
+
+    for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+      const page = await pdf.getPage(pageNo);
+      const content = await page.getTextContent();
+      const text = content.items
+        .map((item) => ("str" in item ? item.str : ""))
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      pageTexts.push(text);
+    }
+
+    // Check if the PDF appears to be scanned (very little text per page)
+    const totalChars = pageTexts.reduce((acc, t) => acc + t.length, 0);
+    const isScanned = totalChars < OCR_FALLBACK_CHARS_PER_PAGE * pdf.numPages;
+
+    if (isScanned) {
+      try {
+        const Tesseract = await import("tesseract.js");
+        const worker = await Tesseract.createWorker("eng", 1, {
+          logger: () => {
+            // Intentionally no-op
+          },
+        });
+
+        const ocrPageTexts: string[] = [];
+        try {
+          for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+            const page = await pdf.getPage(pageNo);
+            const blob = await renderPdfPageToBlob(page);
+            if (!blob) {
+              ocrPageTexts.push(pageTexts[pageNo - 1] ?? "");
+              continue;
+            }
+            const result = await worker.recognize(blob);
+            ocrPageTexts.push(result.data.text?.trim() ?? "");
+          }
+        } finally {
+          await worker.terminate();
+        }
+
+        return ocrPageTexts;
+      } catch {
+        // OCR failed — return whatever text-layer we extracted
+        return pageTexts;
+      }
+    }
+
+    return pageTexts;
+  } catch {
+    // If extraction fails entirely, return one empty page
+    return [""];
+  }
+}
