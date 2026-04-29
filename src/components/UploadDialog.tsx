@@ -9,6 +9,7 @@
  */
 
 import { useState, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,12 @@ import {
   useBulkUpload,
   useScannerImport,
 } from "@/hooks/useDocuments";
+import { useMutation } from "@tanstack/react-query";
+import { apiPageFirstUpload } from "@/services/apiPageFirstIntake";
+import { extractFilePages } from "@/services/pdfPageExtractor";
+import { labelPageMetadata } from "@/services/pageFirstIntake";
+import { PAGE_FIRST_INTAKE_ENABLED } from "@/lib/featureFlags";
+import { useAuth } from "@/context/AuthContext";
 import { getDocumentTypeLabel } from "@/services/documentTypeClassifier";
 import { isDocumentPendingReview } from "@/lib/reviewState";
 import type { ArchiveDocument } from "@/types/document";
@@ -115,6 +122,9 @@ interface UploadDialogProps {
 }
 
 const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
+  const navigate = useNavigate();
+  const { organizationId } = useAuth();
+
   const [dragActive, setDragActive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   // Per-file relative paths for folder uploads (webkitRelativePath).
@@ -131,11 +141,45 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
   const bulkUpload = useBulkUpload();
   const scannerImport = useScannerImport();
 
+  // Page-first upload: extract pages in browser → label → POST JSON
+  const pageFirstUpload = useMutation({
+    mutationFn: async (file: File) => {
+      const orgId = organizationId;
+      if (!orgId) throw new Error("No active organization. Please log in again.");
+
+      const extractedPages = await extractFilePages(file);
+      const labeledPages = extractedPages.map((ep) => {
+        const label = labelPageMetadata(ep.pageText, file.name, ep.pageNumber);
+        return {
+          pageNumber: ep.pageNumber,
+          pageText: ep.pageText,
+          detectedDocType: label.detectedDocType ?? undefined,
+          detectedCompanyOrOrg: label.detectedCompanyOrOrg ?? undefined,
+          detectedPersonName: label.detectedPersonName ?? undefined,
+          detectedMonth: label.detectedMonth ?? undefined,
+          detectedYear: label.detectedYear ?? undefined,
+          detectedDate: label.detectedDate ?? undefined,
+          confidence: label.confidence,
+          needsReview: label.needsReview,
+        };
+      });
+
+      return apiPageFirstUpload({
+        orgId,
+        originalFileName: file.name,
+        originalMimeType: file.type || "application/octet-stream",
+        originalFilePath: file.name,
+        pages: labeledPages,
+      });
+    },
+  });
+
   const isUploading =
     uploadSingle.isPending ||
     uploadMultiple.isPending ||
     bulkUpload.isPending ||
-    scannerImport.isPending;
+    scannerImport.isPending ||
+    pageFirstUpload.isPending;
 
   const showingResults = uploadedResults.length > 0;
 
@@ -221,6 +265,41 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
   const handleUpload = async () => {
     if (selectedFiles.length === 0) return;
 
+    // ── Page-first intake path ──────────────────────────────────────────────
+    if (PAGE_FIRST_INTAKE_ENABLED && uploadMode !== "folder") {
+      try {
+        if (selectedFiles.length === 1) {
+          // Single file → extract pages, label, submit, redirect to review
+          const response = await pageFirstUpload.mutateAsync(selectedFiles[0]);
+          toast.success(
+            `${selectedFiles[0].name} uploaded — ${response.pageCount} page${response.pageCount !== 1 ? "s" : ""} ready for review`
+          );
+          closeDialog();
+          navigate(`/documents/page-first/review/${response.originalUploadId}`);
+        } else {
+          // Multiple files → upload each, show success with links
+          const results = await Promise.all(
+            selectedFiles.map((file) => pageFirstUpload.mutateAsync(file))
+          );
+          const total = results.reduce((sum, r) => sum + r.pageCount, 0);
+          toast.success(
+            `${results.length} files uploaded — ${total} pages total. Open each review to continue.`
+          );
+          closeDialog();
+          // Navigate to the first upload's review screen
+          if (results[0]) {
+            navigate(`/documents/page-first/review/${results[0].originalUploadId}`);
+          }
+        }
+      } catch (error) {
+        toast.error(
+          `Upload failed: ${error instanceof Error ? error.message : "Unknown error"}`
+        );
+      }
+      return;
+    }
+
+    // ── Legacy upload path ──────────────────────────────────────────────────
     try {
       let result: ArchiveDocument | ArchiveDocument[];
       switch (uploadMode) {
@@ -569,7 +648,7 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
             Upload completed successfully
           </div>
         )}
-        {(uploadSingle.isError || uploadMultiple.isError || bulkUpload.isError || scannerImport.isError) && (
+        {(uploadSingle.isError || uploadMultiple.isError || bulkUpload.isError || scannerImport.isError || pageFirstUpload.isError) && (
           <div className="flex items-center gap-2 text-sm text-destructive font-body">
             <AlertCircle className="h-4 w-4" />
             Upload failed. Please try again.

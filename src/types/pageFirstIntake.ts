@@ -12,20 +12,28 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type OriginalUploadStatus =
+  | "uploaded"
   | "pending"
   | "splitting"
   | "labeling"
   | "grouping"
+  | "review_ready"
   | "complete"
+  | "approved"
   | "failed";
 
 export type DocumentPageStatus =
   | "pending"
   | "ocr_complete"
   | "labeled"
+  | "reviewed"
   | "failed";
 
-export type DocumentPacketStatus = "suggested" | "approved" | "rejected";
+export type DocumentPacketStatus =
+  | "suggested"
+  | "approved"
+  | "rejected"
+  | "manually_created";
 
 /** How a page relates to its packet */
 export type RelationshipType =

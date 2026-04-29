@@ -21,6 +21,7 @@ import { OrgProgramAccessSettings } from "./pages/OrgProgramAccessSettings.tsx";
 import { OrgInvitationsSettings } from "./pages/OrgInvitationsSettings.tsx";
 import DocIntelDebug from "./pages/DocIntelDebug.tsx";
 import DocumentSearchPage from "./pages/DocumentSearch.tsx";
+import PageFirstReview from "./pages/PageFirstReview.tsx";
 
 const queryClient = new QueryClient();
 
@@ -102,6 +103,7 @@ const App = () => (
               <Route path="/debug/doc-intel" element={<ProtectedRoute><DocIntelDebug /></ProtectedRoute>} />
               <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
               <Route path="/documents/search" element={<ProtectedRoute><DocumentSearchPage /></ProtectedRoute>} />
+              <Route path="/documents/page-first/review/:uploadId" element={<ProtectedRoute><PageFirstReview /></ProtectedRoute>} />
               {/* Redirect old entry-point hits */}
               <Route path="/index" element={<Navigate to="/" replace />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
