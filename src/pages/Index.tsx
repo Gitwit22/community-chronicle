@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Clock, FileText, Search as SearchIcon, Database, Upload, Globe, PenLine, LayoutDashboard, Eye, Settings, LogOut, User, Building2, ChevronDown, ExternalLink, RefreshCw, BookOpen, Landmark } from "lucide-react";
+import { Clock, FileText, Search as SearchIcon, Database, Upload, Globe, PenLine, LayoutDashboard, Eye, Settings, LogOut, User, Building2, ChevronDown, ExternalLink, RefreshCw, BookOpen } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useOrgContext } from "@/context/OrgContext";
 import { isSuiteAdmin } from "@/lib/permissions";
@@ -634,49 +634,6 @@ const Index = () => {
               isLoading={isLoading}
               onFilterByStatus={handleDashboardFilter}
             />
-
-            {/* Featured Legacy Moment */}
-            <div className="rounded-xl border border-primary/30 bg-primary/5 p-6 flex gap-4 items-start">
-              <div className="w-10 h-10 shrink-0 rounded-lg bg-primary/15 flex items-center justify-center">
-                <Landmark className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="font-body text-xs font-semibold uppercase tracking-wider text-primary mb-1">
-                  Featured Legacy Moment
-                </p>
-                <h3 className="font-display text-lg font-bold text-foreground mb-2">
-                  {BRANDING.featuredMoment.title}
-                </h3>
-                <p className="font-body text-sm text-muted-foreground leading-relaxed max-w-2xl">
-                  {BRANDING.featuredMoment.body}
-                </p>
-              </div>
-            </div>
-
-            {/* Roundtable Legacy Section */}
-            <div>
-              <h3 className="font-display text-xl font-bold text-foreground mb-4">
-                Roundtable Legacy
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {BRANDING.legacyMilestones.map((m) => (
-                  <div
-                    key={m.year + m.title}
-                    className="p-5 rounded-xl bg-card border border-border hover:border-primary/30 transition-colors"
-                  >
-                    <span className="font-body text-xs font-semibold text-primary uppercase tracking-wider">
-                      {m.year}
-                    </span>
-                    <h4 className="font-display text-base font-semibold text-foreground mt-1 mb-2">
-                      {m.title}
-                    </h4>
-                    <p className="font-body text-sm text-muted-foreground leading-relaxed">
-                      {m.description}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
           </TabsContent>
 
           <TabsContent value="library" className="space-y-6">
