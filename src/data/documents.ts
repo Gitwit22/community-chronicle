@@ -193,27 +193,38 @@ export const mockDocuments: Document[] = [
 
 export const timelineEvents: TimelineEvent[] = [
   {
-    year: 1987,
-    title: "Coalition Founded",
-    description: "Founding charter approved and mission centered on racial equity and housing justice.",
-    documentIds: ["1"],
+    year: 1941,
+    title: "Detroit Council Founded",
+    description:
+      "Founded as the Detroit Council of Catholics, Jews and Protestants to build understanding across religious and racial divisions — a local chapter of the National Conference of Christians and Jews.",
+    documentIds: [],
   },
   {
-    year: 1992,
-    title: "First Major Lending Study",
-    description: "Published community-backed analysis of predatory lending and foreclosure exposure.",
-    documentIds: ["2"],
+    year: 1960,
+    title: "Detroit Roundtable — Civil Rights Expansion",
+    description:
+      "The organization continued its work across faith, race, culture, and community lines, expanding into broader civil rights and anti-discrimination advocacy.",
+    documentIds: [],
   },
   {
-    year: 2008,
-    title: "Education Equity Workstream",
-    description: "Launched district-level school funding disparity research and policy recommendations.",
-    documentIds: ["5"],
+    year: 2000,
+    title: "Michigan Roundtable for Just Communities",
+    description:
+      "The organization expanded statewide and deepened its mission around racial equity, justice, and beloved community.",
+    documentIds: [],
   },
   {
-    year: 2023,
-    title: "Digital Inclusion Baseline",
-    description: "Completed latest survey on broadband access and digital service barriers.",
-    documentIds: ["10"],
+    year: 2024,
+    title: "First African American Co-Executive Director",
+    description:
+      "Yusef Bunchy Shakur became the first African American leader in the organization's 83-year history.",
+    documentIds: [],
+  },
+  {
+    year: 2025,
+    title: "First Black Executive Director",
+    description:
+      "Dr. Yusef Bunchy Shakur was appointed Executive Director, marking a historic leadership milestone as the first Black and formerly incarcerated person to lead the organization.",
+    documentIds: [],
   },
 ];

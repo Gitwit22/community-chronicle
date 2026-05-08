@@ -6,7 +6,7 @@
  */
 
 /** Human-readable product name shown in UI, emails, and reports. */
-export const PROGRAM_DISPLAY_NAME = "Community Chronicle";
+export const PROGRAM_DISPLAY_NAME = "Michigan Roundtable Community Chronicle";
 
 /** Machine-readable slug used in IDs, routes, config keys, and database fields. */
 export const PROGRAM_SYSTEM_NAME = "community-chronicle";

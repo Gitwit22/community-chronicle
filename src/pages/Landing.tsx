@@ -1,35 +1,32 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Shield, Globe, Database, Upload, Search, BookOpen, Users, FileText } from "lucide-react";
+import { Globe, Database, Upload, Search, BookOpen, Users, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PROGRAM_DISPLAY_NAME } from "@/lib/programInfo";
+import { BRANDING } from "@/lib/brandingConfig";
 import { getSuiteLoginUrl } from "@/lib/suiteLogin";
 import { useAuth } from "@/context/AuthContext";
 
 const features = [
   {
     icon: Globe,
-    title: "Public Research Library",
-    description:
-      "Open access to decades of civil rights documentation, studies, and testimonies.",
+    title: "Public Archive",
+    description: "Open access to public-facing records and history.",
   },
   {
     icon: Database,
-    title: "Structured Digital Archive",
-    description:
-      "Every document is categorized with rich metadata — year, type, financial classification, and more.",
+    title: "Roundtable Legacy",
+    description: "Milestones, leadership, and community justice work.",
   },
   {
     icon: Upload,
-    title: "Document Intake System",
-    description:
-      "Upload files or enter records manually. The system extracts text, detects duplicates, and routes documents for review.",
+    title: "Document Vault",
+    description: "Upload, classify, and preserve internal records.",
   },
   {
     icon: Search,
-    title: "Smart Full-Text Search",
-    description:
-      "Find any document instantly across titles, extracted text, tags, authors, and keywords.",
+    title: "Smart Discovery",
+    description: "Search by person, year, organization, topic, or document type.",
   },
   {
     icon: BookOpen,
@@ -76,15 +73,18 @@ export default function Landing() {
       <header className="border-b border-border bg-card/60 backdrop-blur-sm sticky top-0 z-50">
         <div className="container max-w-6xl py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-              <Shield className="h-5 w-5 text-primary-foreground" />
-            </div>
+            <img
+              src={BRANDING.logo.src}
+              alt={BRANDING.logo.alt}
+              className="h-10 w-auto object-contain"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            />
             <div>
               <h1 className="font-display text-xl font-bold text-foreground leading-tight">
                 {PROGRAM_DISPLAY_NAME}
               </h1>
               <p className="text-xs text-muted-foreground font-body">
-                Civil Rights Document Archive
+                {BRANDING.appSubtitle}
               </p>
             </div>
           </div>
@@ -102,14 +102,10 @@ export default function Landing() {
             {PROGRAM_DISPLAY_NAME} — Document Archive
           </div>
           <h2 className="font-display text-4xl md:text-6xl font-bold text-foreground mb-6 text-balance leading-tight">
-            Decades of Justice,
-            <br />
-            <span className="text-primary">Preserved &amp; Searchable</span>
+            {BRANDING.hero.headline}
           </h2>
           <p className="text-lg md:text-xl text-muted-foreground font-body max-w-2xl mx-auto mb-10 leading-relaxed">
-            A secure, structured archive for civil rights research, community advocacy
-            records, and equity documentation — built for researchers, educators, and
-            advocates who need reliable access to history.
+            {BRANDING.hero.body}
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <a href={enterProgramHref}>
@@ -183,8 +179,7 @@ export default function Landing() {
       <footer className="border-t border-border py-8 mt-auto">
         <div className="container max-w-6xl text-center">
           <p className="text-sm text-muted-foreground font-body">
-            {PROGRAM_DISPLAY_NAME} — Preserving civil rights history for researchers,
-            educators, and advocates.
+            {BRANDING.orgName} — {BRANDING.hero.headline}
           </p>
         </div>
       </footer>

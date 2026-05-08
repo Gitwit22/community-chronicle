@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Clock, FileText, Search as SearchIcon, Shield, Database, Upload, Globe, PenLine, LayoutDashboard, Eye, Settings, LogOut, User, Building2, ChevronDown, ExternalLink, RefreshCw } from "lucide-react";
+import { Clock, FileText, Search as SearchIcon, Database, Upload, Globe, PenLine, LayoutDashboard, Eye, Settings, LogOut, User, Building2, ChevronDown, ExternalLink, RefreshCw, BookOpen, Landmark } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useOrgContext } from "@/context/OrgContext";
 import { isSuiteAdmin } from "@/lib/permissions";
@@ -29,6 +29,7 @@ import ReviewQueuePanel from "@/components/ReviewQueuePanel";
 import StorageSettingsPanel from "@/components/StorageSettingsPanel";
 import { useBulkDeleteDocuments, useDeleteDocument, useDocuments, useDocumentYears, useBulkReprocess, useResolveReview, useRetryProcessing, useReviewQueue } from "@/hooks/useDocuments";
 import { PROGRAM_DISPLAY_NAME, PROGRAM_SYSTEM_NAME } from "@/lib/programInfo";
+import { BRANDING } from "@/lib/brandingConfig";
 import { isDocumentPendingReview } from "@/lib/reviewState";
 import type { ArchiveDocument, ReviewMetadata } from "@/types/document";
 import {
@@ -377,15 +378,18 @@ const Index = () => {
       <header className="border-b border-border bg-card/60 backdrop-blur-sm sticky top-0 z-50">
         <div className="container max-w-6xl py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-              <Shield className="h-5 w-5 text-primary-foreground" />
-            </div>
+            <img
+              src={BRANDING.logo.src}
+              alt={BRANDING.logo.alt}
+              className="h-10 w-auto object-contain"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            />
             <div>
               <h1 className="font-display text-xl font-bold text-foreground leading-tight">
                 {PROGRAM_DISPLAY_NAME}
               </h1>
               <p className="text-xs text-muted-foreground font-body">
-                Civil Rights Document Archive
+                {BRANDING.appSubtitle}
               </p>
             </div>
           </div>
@@ -496,13 +500,10 @@ const Index = () => {
       <section className="border-b border-border bg-gradient-to-b from-primary/5 to-background">
         <div className="container max-w-6xl py-16 text-center">
           <h2 className="font-display text-4xl md:text-5xl font-bold text-foreground mb-4 text-balance">
-            Decades of Justice,
-            <br />
-            <span className="text-primary">Preserved & Searchable</span>
+            {BRANDING.hero.headline}
           </h2>
           <p className="text-lg text-muted-foreground font-body max-w-xl mx-auto mb-10">
-            Explore reports, studies, and testimonies documenting the fight for
-            racial equity and community empowerment.
+            {BRANDING.hero.body}
           </p>
           <div className="flex justify-center mb-12">
             <div className="w-full max-w-2xl space-y-3">
@@ -567,23 +568,26 @@ const Index = () => {
             </div>
           </div>
 
-          {/* System capabilities */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto">
-            {[
-              { icon: Globe, label: "Public Library", desc: "Open research access" },
-              { icon: Database, label: "Digital Archive", desc: "Structured metadata" },
-              { icon: Upload, label: "Document System", desc: "Upload & organize" },
-              { icon: SearchIcon, label: "Smart Search", desc: "AI-powered discovery" },
-            ].map(({ icon: Icon, label, desc }) => (
-              <div key={label} className="flex flex-col items-center gap-2 p-4 rounded-xl bg-card border border-border">
-                <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
-                  <Icon className="h-5 w-5 text-accent" />
-                </div>
-                <span className="font-body text-sm font-semibold text-foreground">{label}</span>
-                <span className="font-body text-xs text-muted-foreground">{desc}</span>
+          {/* Feature cards */}
+          {(() => {
+            const cardIcons = [Globe, Landmark, Database, SearchIcon];
+            return (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto">
+                {BRANDING.featureCards.map(({ id, label, desc }, i) => {
+                  const Icon = cardIcons[i] ?? FileText;
+                  return (
+                    <div key={id} className="flex flex-col items-center gap-2 p-4 rounded-xl bg-card border border-border">
+                      <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
+                        <Icon className="h-5 w-5 text-accent" />
+                      </div>
+                      <span className="font-body text-sm font-semibold text-foreground">{label}</span>
+                      <span className="font-body text-xs text-muted-foreground text-center">{desc}</span>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
+            );
+          })()}
         </div>
       </section>
 
@@ -630,6 +634,49 @@ const Index = () => {
               isLoading={isLoading}
               onFilterByStatus={handleDashboardFilter}
             />
+
+            {/* Featured Legacy Moment */}
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-6 flex gap-4 items-start">
+              <div className="w-10 h-10 shrink-0 rounded-lg bg-primary/15 flex items-center justify-center">
+                <Landmark className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="font-body text-xs font-semibold uppercase tracking-wider text-primary mb-1">
+                  Featured Legacy Moment
+                </p>
+                <h3 className="font-display text-lg font-bold text-foreground mb-2">
+                  {BRANDING.featuredMoment.title}
+                </h3>
+                <p className="font-body text-sm text-muted-foreground leading-relaxed max-w-2xl">
+                  {BRANDING.featuredMoment.body}
+                </p>
+              </div>
+            </div>
+
+            {/* Roundtable Legacy Section */}
+            <div>
+              <h3 className="font-display text-xl font-bold text-foreground mb-4">
+                Roundtable Legacy
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {BRANDING.legacyMilestones.map((m) => (
+                  <div
+                    key={m.year + m.title}
+                    className="p-5 rounded-xl bg-card border border-border hover:border-primary/30 transition-colors"
+                  >
+                    <span className="font-body text-xs font-semibold text-primary uppercase tracking-wider">
+                      {m.year}
+                    </span>
+                    <h4 className="font-display text-base font-semibold text-foreground mt-1 mb-2">
+                      {m.title}
+                    </h4>
+                    <p className="font-body text-sm text-muted-foreground leading-relaxed">
+                      {m.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </TabsContent>
 
           <TabsContent value="library" className="space-y-6">
