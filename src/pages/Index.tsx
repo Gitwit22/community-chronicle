@@ -570,7 +570,7 @@ const Index = () => {
 
           {/* Feature cards */}
           {(() => {
-            const cardIcons = [Globe, Landmark, Database, SearchIcon];
+            const cardIcons = [Globe, BookOpen, Database, SearchIcon];
             return (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto">
                 {BRANDING.featureCards.map(({ id, label, desc }, i) => {
