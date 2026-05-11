@@ -58,6 +58,11 @@ const statusConfig: Record<
     variant: "secondary",
     icon: ScanSearch,
   },
+  designated_complete: {
+    label: "Designated Complete",
+    variant: "default",
+    icon: CheckCircle2,
+  },
   processed: {
     label: "Processed",
     variant: "default",

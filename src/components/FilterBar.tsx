@@ -58,6 +58,7 @@ const PROCESSING_STATUS_LABELS: Record<string, string> = {
   imported: "Imported",
   queued: "Queued",
   processing: "Processing",
+  designated_complete: "Designated Complete",
   processed: "Processed",
   failed: "Failed",
   needs_review: "Needs Review",
@@ -165,6 +166,7 @@ const FilterBar = ({ filters, onChange, years }: FilterBarProps) => {
                 ))
               : /* Fallback to static labels if registry hasn't loaded */
                 Object.entries({
+                  employee_record: "Employee Record",
                   invoice: "Invoice",
                   receipt: "Receipt / Acknowledgment",
                   letter: "Letter / Correspondence",

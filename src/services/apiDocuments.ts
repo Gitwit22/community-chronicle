@@ -126,6 +126,20 @@ function appendOptionalMetadata(formData: FormData, metadata?: Partial<DocumentI
   if (metadata.intakeSource) formData.set("intakeSource", metadata.intakeSource);
   if (metadata.tags) formData.set("tags", JSON.stringify(metadata.tags));
   if (metadata.keywords) formData.set("keywords", JSON.stringify(metadata.keywords));
+  if (metadata.documentType) formData.set("documentType", metadata.documentType);
+  if (metadata.processingBehavior) formData.set("processingBehavior", metadata.processingBehavior);
+  if (typeof metadata.skipOcr === "boolean") formData.set("skipOcr", String(metadata.skipOcr));
+  if (typeof metadata.skipClassification === "boolean") {
+    formData.set("skipClassification", String(metadata.skipClassification));
+  }
+  if (typeof metadata.autoLabelFromFilename === "boolean") {
+    formData.set("autoLabelFromFilename", String(metadata.autoLabelFromFilename));
+  }
+  if (metadata.personName) formData.set("personName", metadata.personName);
+  if (metadata.date) formData.set("date", metadata.date);
+  if (typeof metadata.needsReview === "boolean") formData.set("needsReview", String(metadata.needsReview));
+  if (metadata.originalFilename) formData.set("originalFilename", metadata.originalFilename);
+  if (metadata.relativePath) formData.set("relativePath", metadata.relativePath);
 }
 
 export async function apiGetAllDocuments(filters: DocumentFilters = {}): Promise<ArchiveDocument[]> {

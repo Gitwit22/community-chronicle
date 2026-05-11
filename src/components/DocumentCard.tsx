@@ -156,6 +156,26 @@ const DocumentCard = ({
                 {tag}
               </Badge>
             ))}
+            {document.documentType === "employee_record" && (
+              <Badge variant="outline" className="text-xs font-body border-emerald-300 text-emerald-700">
+                Employee Record
+              </Badge>
+            )}
+            {document.tags.includes("auto_labeled") && (
+              <Badge variant="outline" className="text-xs font-body border-blue-300 text-blue-700">
+                Auto-labeled
+              </Badge>
+            )}
+            {document.tags.includes("ocr_skipped") && (
+              <Badge variant="outline" className="text-xs font-body border-slate-300 text-slate-700">
+                OCR skipped
+              </Badge>
+            )}
+            {document.tags.includes("year_detected") && (
+              <Badge variant="outline" className="text-xs font-body border-amber-300 text-amber-700">
+                Year detected
+              </Badge>
+            )}
           </div>
         </div>
 

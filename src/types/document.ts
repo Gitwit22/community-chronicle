@@ -13,6 +13,7 @@ export type ProcessingStatus =
   | "processing"
   /** Lightweight filename-based intake ran; full extraction is in progress */
   | "intake_complete"
+  | "designated_complete"
   | "processed"
   | "failed"
   | "needs_review";
@@ -457,6 +458,7 @@ export interface SearchIndexFields {
 
 /** System document types — the canonical classification set */
 export const SYSTEM_DOC_TYPES = [
+  "employee_record",
   "invoice",
   "receipt",
   "letter",
@@ -471,6 +473,7 @@ export const SYSTEM_DOC_TYPES = [
 export type SystemDocType = typeof SYSTEM_DOC_TYPES[number];
 
 export const SYSTEM_DOC_TYPE_LABELS: Record<SystemDocType, string> = {
+  employee_record:     "Employee Record",
   invoice:             "Invoice",
   receipt:             "Receipt / Acknowledgment",
   letter:              "Letter / Correspondence",
@@ -493,7 +496,8 @@ export type DocumentClassificationStatus =
   | "known"
   | "other_unclassified"
   | "reviewed_mapped"
-  | "promoted_custom_type";
+  | "promoted_custom_type"
+  | "user_designated";
 
 /** How the classification was determined */
 export type ClassificationMatchedBy =
@@ -588,6 +592,16 @@ export interface DocumentIntakeInput {
   department?: string;
   intakeSource: IntakeSource;
   sourceReference?: string;
+  documentType?: string;
+  processingBehavior?: string;
+  skipOcr?: boolean;
+  skipClassification?: boolean;
+  autoLabelFromFilename?: boolean;
+  personName?: string;
+  date?: string;
+  needsReview?: boolean;
+  originalFilename?: string;
+  relativePath?: string;
   file?: File;
   extractedText?: string;
 }
@@ -667,6 +681,6 @@ export function getDocumentDisplayStatus(doc: Pick<ArchiveDocument, "processingS
   if (ls === "review_required" || ps === "needs_review") return "review_required";
   if (ps === "failed" || ls === "failed") return "failed";
   if (ps === "queued" || ps === "processing" || ps === "intake_complete" || ls === "queued" || ls === "extracting") return "processing";
-  if (ps === "processed") return "done";
+  if (ps === "processed" || ps === "designated_complete") return "done";
   return "intake";
 }

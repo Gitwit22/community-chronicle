@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import ProcessingStatusBadge from "@/components/ProcessingStatusBadge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Upload,
   FolderOpen,
@@ -45,6 +46,7 @@ import { PAGE_FIRST_INTAKE_ENABLED } from "@/lib/featureFlags";
 import { useAuth } from "@/context/AuthContext";
 import { getDocumentTypeLabel } from "@/services/documentTypeClassifier";
 import { isDocumentPendingReview } from "@/lib/reviewState";
+import { deriveEmployeeRecordPreview } from "@/lib/employeeRecordIntake";
 import type { ArchiveDocument } from "@/types/document";
 import { toast } from "sonner";
 
@@ -131,6 +133,10 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
   // Parallel array to selectedFiles — index i in folderPaths corresponds to selectedFiles[i].
   const [folderPaths, setFolderPaths] = useState<string[]>([]);
   const [uploadMode, setUploadMode] = useState<"files" | "folder" | "scanner">("files");
+  const [selectedDocumentType, setSelectedDocumentType] = useState<"general" | "employee_record">("general");
+  const [processingBehavior, setProcessingBehavior] = useState<"auto_label_filename_skip_full_parsing">(
+    "auto_label_filename_skip_full_parsing",
+  );
   const [uploadedResults, setUploadedResults] = useState<ArchiveDocument[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -182,6 +188,20 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
     pageFirstUpload.isPending;
 
   const showingResults = uploadedResults.length > 0;
+  const isEmployeeRecordMode = selectedDocumentType === "employee_record";
+
+  const employeePreviewRows = isEmployeeRecordMode
+    ? selectedFiles.map((file, index) => {
+        const relativePath = folderPaths[index] || undefined;
+        const detected = deriveEmployeeRecordPreview(file.name, relativePath);
+        return {
+          fileName: uploadMode === "folder" && relativePath ? relativePath : file.name,
+          personName: detected.personName,
+          yearOrDate: detected.date ?? (detected.year ? String(detected.year) : "-"),
+          needsReview: detected.needsReview,
+        };
+      })
+    : [];
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -266,7 +286,7 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
     if (selectedFiles.length === 0) return;
 
     // ── Page-first intake path ──────────────────────────────────────────────
-    if (PAGE_FIRST_INTAKE_ENABLED && uploadMode !== "folder") {
+    if (PAGE_FIRST_INTAKE_ENABLED && uploadMode !== "folder" && !isEmployeeRecordMode) {
       try {
         if (selectedFiles.length === 1) {
           // Single file → extract pages, label, submit, redirect to review
@@ -302,28 +322,50 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
     // ── Legacy upload path ──────────────────────────────────────────────────
     try {
       let result: ArchiveDocument | ArchiveDocument[];
+      const metadata = isEmployeeRecordMode
+        ? {
+            documentType: "employee_record",
+            processingBehavior,
+            autoLabelFromFilename: true,
+            skipOcr: true,
+            skipClassification: true,
+            intakeSource: uploadMode === "folder"
+              ? "bulk_folder"
+              : uploadMode === "scanner"
+                ? "scanner_import"
+                : selectedFiles.length === 1
+                  ? "file_upload"
+                  : "multi_upload",
+          }
+        : undefined;
+
       switch (uploadMode) {
         case "folder":
           // Pass per-file relative paths so the backend can persist archival provenance
           result = await bulkUpload.mutateAsync({
             files: selectedFiles,
+            metadata,
             sourceReferences: folderPaths.length === selectedFiles.length ? folderPaths : undefined,
           });
           break;
         case "scanner":
-          result = await scannerImport.mutateAsync({ files: selectedFiles });
+          result = await scannerImport.mutateAsync({ files: selectedFiles, metadata });
           break;
         case "files":
         default:
           if (selectedFiles.length === 1) {
-            result = await uploadSingle.mutateAsync({ file: selectedFiles[0] });
+            result = await uploadSingle.mutateAsync({ file: selectedFiles[0], metadata });
           } else {
-            result = await uploadMultiple.mutateAsync({ files: selectedFiles });
+            result = await uploadMultiple.mutateAsync({ files: selectedFiles, metadata });
           }
           break;
       }
       const documentLabel = selectedFiles.length === 1 ? "document" : "documents";
-      toast.success(`${selectedFiles.length} ${documentLabel} uploaded and queued for processing`);
+      toast.success(
+        isEmployeeRecordMode
+          ? `${selectedFiles.length} ${documentLabel} uploaded and auto-labeled from filename`
+          : `${selectedFiles.length} ${documentLabel} uploaded and queued for processing`,
+      );
 
       if (Array.isArray(result)) {
         setUploadedResults(result);
@@ -412,6 +454,26 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
                         {getDocumentTypeLabel(document.documentType)}
                       </Badge>
                     )}
+                    {document.documentType === "employee_record" && (
+                      <Badge variant="outline" className="text-xs border-emerald-300 text-emerald-700">
+                        Employee Record
+                      </Badge>
+                    )}
+                    {document.tags.includes("auto_labeled") && (
+                      <Badge variant="outline" className="text-xs border-blue-300 text-blue-700">
+                        Auto-labeled
+                      </Badge>
+                    )}
+                    {document.tags.includes("ocr_skipped") && (
+                      <Badge variant="outline" className="text-xs border-slate-300 text-slate-700">
+                        OCR skipped
+                      </Badge>
+                    )}
+                    {document.tags.includes("year_detected") && (
+                      <Badge variant="outline" className="text-xs border-amber-300 text-amber-700">
+                        Year detected
+                      </Badge>
+                    )}
                     {document.needsReview ? (
                       <Badge variant="outline" className="text-xs text-orange-700 border-orange-300">
                         Review required
@@ -445,6 +507,51 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
           </div>
         ) : (
         <>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+          <div className="space-y-1.5">
+            <p className="font-body text-xs font-medium text-muted-foreground">Document Type</p>
+            <Select
+              value={selectedDocumentType}
+              onValueChange={(value) => setSelectedDocumentType(value as "general" | "employee_record")}
+            >
+              <SelectTrigger className="font-body">
+                <SelectValue placeholder="Select document type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="general">General Upload</SelectItem>
+                <SelectItem value="employee_record">Employee Record</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {isEmployeeRecordMode && (
+            <div className="space-y-1.5">
+              <p className="font-body text-xs font-medium text-muted-foreground">Processing Behavior</p>
+              <Select
+                value={processingBehavior}
+                onValueChange={(value) => setProcessingBehavior(value as "auto_label_filename_skip_full_parsing")}
+              >
+                <SelectTrigger className="font-body">
+                  <SelectValue placeholder="Select processing behavior" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto_label_filename_skip_full_parsing">
+                    Auto-label from filename and skip full parsing
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+
+        {isEmployeeRecordMode && (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 mt-3">
+            <p className="font-body text-xs text-emerald-800">
+              Employee name will be taken from each file name. The system will lightly scan for a year/date tag.
+            </p>
+          </div>
+        )}
 
         <Tabs
           value={uploadMode}
@@ -609,6 +716,39 @@ const UploadDialog = ({ open, onOpenChange }: UploadDialogProps) => {
                 </div>
               ))}
             </div>
+
+            {isEmployeeRecordMode && (
+              <div className="rounded-lg border border-border overflow-hidden mt-3">
+                <div className="px-3 py-2 bg-muted/40 border-b border-border">
+                  <p className="font-body text-xs font-medium text-foreground">Auto-label Preview</p>
+                </div>
+                <div className="max-h-56 overflow-y-auto">
+                  <table className="w-full text-xs font-body">
+                    <thead className="bg-muted/20">
+                      <tr className="text-left text-muted-foreground">
+                        <th className="px-3 py-2">File name</th>
+                        <th className="px-3 py-2">Detected employee name</th>
+                        <th className="px-3 py-2">Detected year/date</th>
+                        <th className="px-3 py-2">Processing behavior</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {employeePreviewRows.map((row, index) => (
+                        <tr key={`${row.fileName}-${index}`} className="border-t border-border/70">
+                          <td className="px-3 py-2 text-foreground">{row.fileName}</td>
+                          <td className="px-3 py-2 text-foreground">{row.personName}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{row.yearOrDate}</td>
+                          <td className="px-3 py-2 text-muted-foreground">
+                            Auto-label from filename and skip full parsing
+                            {row.needsReview ? " (needs review)" : ""}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
